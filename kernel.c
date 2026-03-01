@@ -91,7 +91,7 @@ void terminal_putchar(char c)
 {
 	if (c == '\n')
 	{
-		terminal_collumn = 0;
+		terminal_column = 0;
 		if (++terminal_row == VGA_HEIGHT)
 		{
 			terminal_row =0;
