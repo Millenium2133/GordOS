@@ -1,7 +1,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
 #include "gdt.h"
+#include "idt.h"
+
 
 // Compiler check
 #if defined(__linux__)
@@ -123,8 +126,11 @@ void terminal_writestring(const char* data)
 
 void kernel_main(void)
 {
-	// Yo its my own GDT dependency
+	// Yo its my own dependencies
 	gdt_init();
+	idt_init();
+	//Testing the IDT
+	int x = 1/0;
 
 	// Initialize the terminal interface
 	terminal_initialize();
