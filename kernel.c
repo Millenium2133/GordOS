@@ -133,11 +133,12 @@ void kernel_main(void)
 
 	// Initialize the terminal interface
 	terminal_initialize();
+
 	// Force IDT
-	asm volatile("int $0x0");
+	// asm volatile("int $0x0");
 
 	// this just writes shit
-	terminal_writestring("Testing testing, 123\nI SWEAR TO GOD IF THIS FUCKING IDT BS DOESNT WORK!!");
+	terminal_writestring("Testing testing, 123\nWe are live");
 
 	// Stops my CPU form running away
 	for(;;)
