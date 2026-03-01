@@ -13,6 +13,7 @@ Feel free to modify and add to this repository
 LINUX ONLY
 
 You will need a gcc cross compiler. https://wiki.osdev.org/GCC_Cross-Compiler.
+
 Test the compiler with '$HOME/opt/cross/bin/$TARGET-gcc --version'
 
 If you do everything in the OSDev wiki, you should be fine.
@@ -25,7 +26,8 @@ I would reccomend creating a new directory for the OS.
 
 you can name this whatever you want
 
-clone the repo into you 'os' directory
+
+clone the repo into your 'os' directory
 
 
 run the make commands
@@ -54,6 +56,7 @@ or
 'qemu-system-i386 -kernel myos'
 
 
+
 On real hardware
 
 'sudo dd if=myos.iso of=/dev/sdx && sync'
@@ -68,9 +71,11 @@ where 'x' is the name of your drive.
 Probably not. I'm lazy.
 
 
+
 "Why should I use MyOS?"
 
 You shouldn't.
+
 
 
 "Why are you making MyOS?"
