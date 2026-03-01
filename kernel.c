@@ -89,12 +89,24 @@ void terminal_putentryat(char c, uint8_t color, size_t x, size_t y)
 
 void terminal_putchar(char c)
 {
-	terminal_putentryat(c, terminal_color, terminal_column, terminal_row);
-	if (++terminal_column == VGA_WIDTH)
+	if (c == '\n')
 	{
-		terminal_column = 0;
+		terminal_collumn = 0;
 		if (++terminal_row == VGA_HEIGHT)
-			terminal_row = 0;
+		{
+			terminal_row =0;
+		}
+	}
+
+	else
+	{
+		terminal_putentryat(c, terminal_color, terminal_column, terminal_row);
+		if (++terminal_column == VGA_WIDTH)
+		{
+			terminal_column = 0;
+			if (++terminal_row == VGA_HEIGHT)
+				terminal_row = 0;
+		}
 	}
 }
 
@@ -116,7 +128,7 @@ void kernel_main(void)
 
 	// Initialize the terminal interface
 	terminal_initialize();
-	terminal_writestring("Testing testing, 123");
+	terminal_writestring("Testing testing, 123\nTesing Theese brand new lines!");
 
 	// Stops my CPU form running away
 	for(;;)
