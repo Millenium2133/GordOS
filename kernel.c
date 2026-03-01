@@ -59,7 +59,7 @@ size_t terminal_column;
 uint8_t terminal_color;
 uint16_t* terminal_buffer = (uint16_t*)VGA_MEMORY;
 
-void terminal_initialsize(void)
+void terminal_initialize(void)
 {
 	terminal_row = 0;
 	terminal_column = 0;
@@ -111,7 +111,7 @@ void terminal_writestring(const char* data)
 void kernel_main(void)
 {
 	// Initialize the terminal interface
-	terminal_initialsize();
+	terminal_initialize();
 
 	// Writes to the screen
 	terminal_writestring("Testing testing, 123");
