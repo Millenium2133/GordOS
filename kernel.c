@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "gdt.h"
 
 // Compiler check
 #if defined(__linux__)
@@ -24,7 +25,7 @@ enum vga_color
 	VGA_COLOR_LIGHT_GREY = 7,
 	VGA_COLOR_DARK_GREY = 8,
 	VGA_COLOR_LIGHT_BLUE = 9,
-	VGA_COLOR_LIGT_GREEN = 10,
+	VGA_COLOR_LIGHT_GREEN = 10,
 	VGA_COLOR_LIGHT_CYAN = 11,
 	VGA_COLOR_LIGHT_RED = 12,
 	VGA_COLOR_LIGHT_MAGENTA = 13,
@@ -110,9 +111,16 @@ void terminal_writestring(const char* data)
 
 void kernel_main(void)
 {
+	// Yo its my own GDT dependency
+	gdt_init();
+
 	// Initialize the terminal interface
 	terminal_initialize();
-
-	// Writes to the screen
 	terminal_writestring("Testing testing, 123");
+
+	// Stops my CPU form running away
+	for(;;)
+	{
+		asm volatile("hlt");
+	}
 }
