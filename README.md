@@ -82,3 +82,7 @@ You shouldn't.
 
 Becaue I feel like it.
 
+
+"Is there any use of AI?"
+
+No. I have beel only using tutorials, YouTube videos and reading documentation as well as other peoples source code to get an understanding for what I should do
