@@ -75,7 +75,7 @@ void splash_show(void)
 
 	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_MAGENTA, VGA_COLOR_BLACK));
 
-	for (int i = 0; i < 6; i++)
+	for (int i = 0; i < 3; i++)
 		terminal_putchar('\n');
 
 	#define INDENT() for (int _i = 0; _i < box_indent; _i++) terminal_putchar(' ')
