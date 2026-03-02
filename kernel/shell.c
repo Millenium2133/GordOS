@@ -54,7 +54,7 @@ static void cmd_help(void)
 static void cmd_clear(void)
 {
 	// Clear by writing spaces to every cell
-	for (int y = 0; y < 25; y++);
+	for (int y = 0; y < 25; y++)
 		for (int x = 0; x < 80; x++)
 			terminal_putchar(' ');
 
