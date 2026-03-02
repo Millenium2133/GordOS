@@ -75,14 +75,14 @@ void splash_show(void)
 
 	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_MAGENTA, VGA_COLOR_BLACK));
 
-	for (int i = 0; i < 3; i++)
+	for (int i = 0; i < 1; i++)
 		terminal_putchar('\n');
 
 	#define INDENT() for (int _i = 0; _i < box_indent; _i++) terminal_putchar(' ')
 
 	INDENT(); print_border(box_width);
 	INDENT(); print_empty_line(box_width);
-	INDENT(); print_bordered_line("Welcome toy GordOS!", box_width);
+	INDENT(); print_bordered_line("Welcome to GordOS!", box_width);
 	INDENT(); print_bordered_line("The OS that sucks", box_width);
 	INDENT(); print_bordered_line("(For now :3)", box_width);
 	INDENT(); print_empty_line(box_width);
