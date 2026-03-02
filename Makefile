@@ -4,7 +4,7 @@ LD = i686-elf-gcc
 
 CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra
 
-OBJS = boot.o kernel.o gdt.o gdt_flush.o idt.o idt_flush.o isr.o
+OBJS = boot.o kernel.o gdt.o gdt_flush.o idt.o idt_flush.o isr.o pic.o
 
 myos: $(OBJS) linker.ld
 	$(LD) -T linker.ld -o myos -ffreestanding -O2 -nostdlib $(OBJS) -lgcc
@@ -24,10 +24,13 @@ idt_flush.o: idt_flush.s
 isr.o: isr.s
 	$(AS) isr.s -o isr.o
 
+pic.o: pic.c pic.h
+	$(CC) $(CFLAGS) -c pic.c -o pic.o
+
 boot.o: boot.s
 	$(AS) boot.s -o boot.o
 
-kernel.o: kernel.c gdt.h idt.h
+kernel.o: kernel.c gdt.h idt.h pic.h
 	$(CC) $(CFLAGS) -c kernel.c -o kernel.o
 
 iso: myos

@@ -1,4 +1,22 @@
 #include "idt.h"
+#include "pic.h"
+
+static void (*irq_handlers[16])(struct registers) = {0};
+
+void irq_register(int irq, void (*handler)(struct registers))
+{
+	irq_handlers[irq] = handler;
+}
+
+void irq_handler(struct registers regs)
+{
+	int irq = regs.int_no - 32;
+
+	if (irq_handlers[irq] != 0)
+		irq_handlers[irq](regs);
+
+	pic_send_eoi(irq);
+}
 
 void terminal_writestring(const char* data);
 
@@ -42,6 +60,24 @@ extern void isr28(void);
 extern void isr29(void);
 extern void isr30(void);
 extern void isr31(void);
+
+extern void irq0(void);
+extern void irq1(void);
+extern void irq2(void);
+extern void irq3(void);
+extern void irq4(void);
+extern void irq4(void);
+extern void irq5(void);
+extern void irq6(void);
+extern void irq7(void);
+extern void irq8(void);
+extern void irq9(void);
+extern void irq10(void);
+extern void irq11(void);
+extern void irq12(void);
+extern void irq13(void);
+extern void irq14(void);
+extern void irq15(void);
 
 static void idt_set_entry(int num, uint32_t base, uint16_t selector, uint8_t flags)
 {
@@ -94,18 +130,27 @@ void idt_init(void)
 	idt_set_entry(29, (uint32_t)isr29, 0x08, 0x8E);
 	idt_set_entry(30, (uint32_t)isr30, 0x08, 0x8E);
 	idt_set_entry(31, (uint32_t)isr31, 0x08, 0x8E);
+	idt_set_entry(32, (uint32_t)irq0, 0x08, 0x8E);
+	idt_set_entry(33, (uint32_t)irq1, 0x08, 0x8E);
+	idt_set_entry(34, (uint32_t)irq2, 0x08, 0x8E);
+	idt_set_entry(35, (uint32_t)irq3, 0x08, 0x8E);
+	idt_set_entry(36, (uint32_t)irq4, 0x08, 0x8E);
+	idt_set_entry(37, (uint32_t)irq5, 0x08, 0x8E);
+	idt_set_entry(38, (uint32_t)irq6, 0x08, 0x8E);
+	idt_set_entry(39, (uint32_t)irq7, 0x08,0x8E);
+	idt_set_entry(40, (uint32_t)irq8, 0x08, 0x8E);
+	idt_set_entry(41, (uint32_t)irq9, 0x08, 0x8E);
+	idt_set_entry(42, (uint32_t)irq10, 0x08, 0x8E);
+	idt_set_entry(43, (uint32_t)irq11, 0x08, 0x8E);
+	idt_set_entry(44, (uint32_t)irq12, 0x08, 0x8E);
+	idt_set_entry(45, (uint32_t)irq13, 0x08, 0x8E);
+	idt_set_entry(46, (uint32_t)irq14, 0x08, 0x8E);
+	idt_set_entry(47, (uint32_t)irq15, 0x08, 0x8E);
 
 	idt_flush((uint32_t)&ip);
 }
 
 
-struct registers
-{
-	uint32_t ds;
-	uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;
-	uint32_t int_no, err_code;
-	uint32_t eip, cs, eflags, useresp, ss;
-};
 
 static const char *exeption_names[] = {
 	"Divide by Zero", "Debug", "Non-Maskable Interrupt", "Breakpoint", "Overflow",

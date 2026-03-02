@@ -2,8 +2,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Handcrafted dependencies
 #include "gdt.h"
 #include "idt.h"
+#include "pic.h"
 
 
 // Compiler check
@@ -129,7 +131,7 @@ void kernel_main(void)
 	// Yo its my own dependencies
 	gdt_init();
 	idt_init();
-
+	pic_remap();
 
 	// Initialize the terminal interface
 	terminal_initialize();
@@ -139,6 +141,8 @@ void kernel_main(void)
 
 	// this just writes shit
 	terminal_writestring("Testing testing, 123\nWe are live");
+
+	asm volatile("sti");
 
 	// Stops my CPU form running away
 	for(;;)
