@@ -66,6 +66,16 @@ size_t terminal_column;
 uint8_t terminal_color;
 uint16_t* terminal_buffer = (uint16_t*)VGA_MEMORY;
 
+void update_cursor(void)
+{
+	uint16_t pos = terminal_row * VGA_WIDTH + terminal_column;
+
+	outb(0x3D4, 0x0F);
+	outb(0x3D5, (uint8_t)(pos & 0xFF));
+	outb(0x3D4, 0x0E);
+	outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
+}
+
 void terminal_initialize(void)
 {
 	terminal_row = 0;
@@ -80,6 +90,8 @@ void terminal_initialize(void)
 			terminal_buffer[index] = vga_entry(' ', terminal_color);
 		}
 	}
+
+	update_cursor();
 }
 
 void terminal_setcolor(uint8_t color)
@@ -114,6 +126,8 @@ void terminal_putchar(char c)
 				terminal_row = 0;
 		}
 	}
+
+	update_cursor();
 }
 
 void terminal_write(const char* data, size_t size)
