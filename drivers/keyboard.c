@@ -26,21 +26,32 @@ static int shift_pressed = 0;
 void terminal_putchar(char c);
 void terminal_backspace(void);
 
+static int extended = 0;
+
 
 static void  keyboard_handler(struct registers regs)
 {
 	(void)regs;
 
+	// Extended scancode prefix
 	uint8_t scancode = inb(0x60);
+
+	if (scancode == 0xE0)
+	{
+		extended = 1;
+		return;
+	}
 
 	// Key release
 	if (scancode & 0x80)
 	{
 		uint8_t released = scancode & 0x7F;
-		if (released == 0x2A || released == 0x36)
+		if (!extended && (released == 0x2A || released == 0x36))
 			shift_pressed = 0;
+		extended = 0;
 		return;
 	}
+
 
 	// Shift pressed
 	if (scancode == 0x2A || scancode == 0x36)
