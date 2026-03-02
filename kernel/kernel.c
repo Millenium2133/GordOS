@@ -10,6 +10,7 @@
 #include "keyboard.h"
 #include "string.h"
 #include "splash.h"
+#include "shell.h"
 
 
 // Compiler check
@@ -29,7 +30,7 @@ void kernel_main(void)
 	terminal_initialize();
 
 	splash_show();
-	terminal_writestring("GordOS> ");
+	shell_init();
 
 	keyboard_init();
 	asm volatile("sti");
