@@ -52,29 +52,20 @@ static void  keyboard_handler(struct registers regs)
 		return;
 	}
 
-
-	// Shift pressed
-	if (scancode == 0x2A || scancode == 0x36)
+	
+	// If extended scancode
+	if (extended)
 	{
-		shift_pressed = 1;
+		extended = 0;
 		return;
 	}
 
-	// Enter key
-	if (scancode == 0x1C)
-	{
-		terminal_putchar('\n');
-		return;
-	}
+	// Shift, Enter and "Backspace"
+	// A better backspace will come with the shell once that is made
+	if (scancode == 0x2A || scancode == 0x36) { shift_pressed = 1; return; }
+	if (scancode == 0x1C) { terminal_putchar('\n'); return; }
+	if (scancode == 0x0E) { terminal_backspace(); return; }
 
-	// THE BACKSPACE I FORGOT TO ADD WTF HOW
-	if (scancode == 0x0E)
-	{
-		terminal_backspace();
-		return;
-	}
-
-	// Norman key
 	char c = shift_pressed ? scancode_table_shift[scancode] : scancode_table[scancode];
 	if (c != 0)
 		terminal_putchar(c);
