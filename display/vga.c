@@ -14,6 +14,8 @@ static size_t terminal_column;
 static uint8_t terminal_color;
 static uint16_t* terminal_buffer = (uint16_t*)VGA_MEMORY;
 
+
+
 void update_cursor(void)
 {
 	uint16_t pos = terminal_row * VGA_WIDTH + terminal_column;
@@ -82,6 +84,14 @@ static void terminal_scroll(void)
 	}
 
 	terminal_row = VGA_HEIGHT - 1;
+}
+
+void terminal_cursor_left(void)
+{
+    if (terminal_column == 0)
+        return;
+    terminal_column--;
+    update_cursor();
 }
 
 

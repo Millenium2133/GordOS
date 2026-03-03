@@ -13,11 +13,12 @@ static int history_count = 0;
 static int history_index = -1;
 static int cursor_pos = 0;
 
-// Forward declamations form via.c
+// Forward declarations from vga.c
 void terminal_writestring(const char* data);
 void terminal_putchar(char c);
 void terminal_backspace(void);
 void terminal_setcolor(uint8_t color);
+void terminal_cursor_left(void);
 
 // forward dec from vga.h
 uint8_t vga_entry_color(enum vga_color fg, enum vga_color bg);
@@ -59,17 +60,15 @@ static void cmd_help(void)
 // clear
 static void cmd_clear(void)
 {
-	// Clear by writing spaces to every cell
 	for (int y = 0; y < 25; y++)
 		for (int x = 0; x < 80; x++)
 			terminal_putchar(' ');
 
-	// reset cursor to  top by reinitializing terminal
 	extern void terminal_initialize(void);
 	terminal_initialize();
 }
 
-//echo
+// echo
 static void cmd_echo(const char* args)
 {
 	if (args == 0 || *args == '\0')
@@ -82,7 +81,7 @@ static void cmd_echo(const char* args)
 	terminal_putchar('\n');
 }
 
-// About
+// about
 static void cmd_about(void)
 {
 	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_MAGENTA, VGA_COLOR_BLACK));
@@ -90,14 +89,13 @@ static void cmd_about(void)
 	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
 	terminal_writestring("	A hobby OS by Hamish Gordon\n");
 	terminal_writestring("	Built from scratch in C and x86 Assembly\n");
-	terminal_writestring("	https://github.io/Millenium2133/GordOS\n");
+	terminal_writestring("	https://github.com/Millenium2133/GordOS\n");
 }
 
 // ++++++++++++++++++++
 // + Command Dispatch +
 // ++++++++++++++++++++
 
-//simple Tokenizer
 static const char* get_args(const char* input, size_t cmd_len)
 {
 	if (input[cmd_len] == ' ' && input[cmd_len + 1] != '\0')
@@ -139,146 +137,143 @@ static void shell_prompt(void)
 	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
 }
 
+// Moves cursor to end of input, then erases the whole line
+static void clear_input_line(void)
+{
+	// First move cursor to end of line
+	for (int i = cursor_pos; i < input_index; i++)
+		terminal_putchar(input_buffer[i]);
+	// Then backspace the whole thing
+	for (int i = 0; i < input_index; i++)
+		terminal_backspace();
+}
+
 void shell_handle_char(char c)
 {
-    if (c == '\n')
-    {
-        terminal_putchar('\n');
-        input_buffer[input_index] = '\0';
+	if (c == '\n')
+	{
+		terminal_putchar('\n');
+		input_buffer[input_index] = '\0';
 
-        // Save to history if non-empty
-        if (input_index > 0)
-        {
-            // Shift history up if full
-            if (history_count == HISTORY_SIZE)
-            {
-                for (int i = 0; i < HISTORY_SIZE - 1; i++)
-                {
-                    for (int j = 0; j < INPUT_BUFFER_SIZE; j++)
-                        history[i][j] = history[i + 1][j];
-                }
-                history_count--;
-            }
-            // Copy current input into history
-            for (int i = 0; i <= input_index; i++)
-                history[history_count][i] = input_buffer[i];
-            history_count++;
-        }
+		// Save to history if non-empty
+		if (input_index > 0)
+		{
+			if (history_count == HISTORY_SIZE)
+			{
+				for (int i = 0; i < HISTORY_SIZE - 1; i++)
+					for (int j = 0; j < INPUT_BUFFER_SIZE; j++)
+						history[i][j] = history[i + 1][j];
+				history_count--;
+			}
+			for (int i = 0; i <= input_index; i++)
+				history[history_count][i] = input_buffer[i];
+			history_count++;
+		}
 
-        shell_execute(input_buffer);
-        input_index = 0;
-        cursor_pos = 0;
-        history_index = -1;
-        shell_prompt();
-    }
-    else if (c == '\b')
-    {
-        // Backspace at cursor position
-        if (cursor_pos > 0)
-        {
-            // Shift everything left from cursor
-            for (int i = cursor_pos - 1; i < input_index - 1; i++)
-                input_buffer[i] = input_buffer[i + 1];
-            input_index--;
-            cursor_pos--;
+		shell_execute(input_buffer);
+		input_index = 0;
+		cursor_pos = 0;
+		history_index = -1;
+		shell_prompt();
+	}
+	else if (c == '\b')
+	{
+		if (cursor_pos > 0)
+		{
+			// Shift buffer left
+			for (int i = cursor_pos - 1; i < input_index - 1; i++)
+				input_buffer[i] = input_buffer[i + 1];
+			input_index--;
+			cursor_pos--;
 
-            // Redraw from cursor to end, then erase last char
-            for (int i = cursor_pos; i < input_index; i++)
-                terminal_putchar(input_buffer[i]);
-            terminal_putchar(' ');  // erase the last character
+			// Move cursor back one, then redraw from there to end
+		        terminal_cursor_left();
+       			 for (int i = cursor_pos; i < input_index; i++)
+           			 terminal_putchar(input_buffer[i]);
+       			 terminal_putchar(' ');  // erase the now-dangling last char
 
-            // Move cursor back to correct position
-            for (int i = cursor_pos; i < input_index + 1; i++)
-                terminal_backspace();
-        }
-    }
-    else if ((unsigned char)c == KEY_LEFT)
-    {
-        if (cursor_pos > 0)
-        {
-            cursor_pos--;
-            terminal_backspace();
-        }
-    }
-    else if ((unsigned char)c == KEY_RIGHT)
-    {
-        if (cursor_pos < input_index)
-        {
-            terminal_putchar(input_buffer[cursor_pos]);
-            cursor_pos++;
-        }
-    }
-    else if ((unsigned char)c == KEY_UP)
-    {
-        // Go back in history
-        int new_index = history_index + 1;
-        if (new_index < history_count)
-        {
-            history_index = new_index;
-            // Clear current input line
-            for (int i = 0; i < input_index; i++)
-                terminal_backspace();
-            // Load history entry (newest first)
-            int entry = history_count - 1 - history_index;
-            input_index = 0;
-            cursor_pos = 0;
-            for (int i = 0; history[entry][i] != '\0'; i++)
-            {
-                input_buffer[input_index++] = history[entry][i];
-                terminal_putchar(history[entry][i]);
-                cursor_pos++;
-            }
-        }
-    }
-    else if ((unsigned char)c == KEY_DOWN)
-    {
-        // Go forward in history
-        history_index--;
-        if (history_index < 0)
-        {
-            // Back to empty prompt
-            history_index = -1;
-            for (int i = 0; i < input_index; i++)
-                terminal_backspace();
-            input_index = 0;
-            cursor_pos = 0;
-        }
-        else
-        {
-            // Load history entry
-            for (int i = 0; i < input_index; i++)
-                terminal_backspace();
-            int entry = history_count - 1 - history_index;
-            input_index = 0;
-            cursor_pos = 0;
-            for (int i = 0; history[entry][i] != '\0'; i++)
-            {
-                input_buffer[input_index++] = history[entry][i];
-                terminal_putchar(history[entry][i]);
-                cursor_pos++;
-            }
-        }
-    }
-    else if (input_index < INPUT_BUFFER_SIZE - 1)
-    {
-        // Insert character at cursor position
-        // Shift everything right from cursor
-        for (int i = input_index; i > cursor_pos; i--)
-            input_buffer[i] = input_buffer[i - 1];
-        input_buffer[cursor_pos] = c;
-        input_index++;
+			// Move cursor back to correct position
+			for (int i = cursor_pos; i < input_index + 1; i++)
+				terminal_cursor_left();
+		}
+	}
+	else if ((unsigned char)c == KEY_LEFT)
+	{
+		if (cursor_pos > 0)
+		{
+			cursor_pos--;
+			terminal_cursor_left();
+		}
+	}
+	else if ((unsigned char)c == KEY_RIGHT)
+	{
+		if (cursor_pos < input_index)
+		{
+			terminal_putchar(input_buffer[cursor_pos]);
+			cursor_pos++;
+		}
+	}
+	else if ((unsigned char)c == KEY_UP)
+	{
+		int new_index = history_index + 1;
+		if (new_index < history_count)
+		{
+			history_index = new_index;
+			clear_input_line();
+			int entry = history_count - 1 - history_index;
+			input_index = 0;
+			cursor_pos = 0;
+			for (int i = 0; history[entry][i] != '\0'; i++)
+			{
+				input_buffer[input_index++] = history[entry][i];
+				terminal_putchar(history[entry][i]);
+				cursor_pos++;
+			}
+		}
+	}
+	else if ((unsigned char)c == KEY_DOWN)
+	{
+		history_index--;
+		if (history_index < 0)
+		{
+			history_index = -1;
+			clear_input_line();
+			input_index = 0;
+			cursor_pos = 0;
+		}
+		else
+		{
+			clear_input_line();
+			int entry = history_count - 1 - history_index;
+			input_index = 0;
+			cursor_pos = 0;
+			for (int i = 0; history[entry][i] != '\0'; i++)
+			{
+				input_buffer[input_index++] = history[entry][i];
+				terminal_putchar(history[entry][i]);
+				cursor_pos++;
+			}
+		}
+	}
+	else if (input_index < INPUT_BUFFER_SIZE - 1)
+	{
+		// Insert character at cursor position
+		for (int i = input_index; i > cursor_pos; i--)
+			input_buffer[i] = input_buffer[i - 1];
+		input_buffer[cursor_pos] = c;
+		input_index++;
 
-        // Redraw from cursor to end
-        for (int i = cursor_pos; i < input_index; i++)
-            terminal_putchar(input_buffer[i]);
-        cursor_pos++;
+		// Redraw from cursor to end
+		for (int i = cursor_pos; i < input_index; i++)
+			terminal_putchar(input_buffer[i]);
+		cursor_pos++;
 
-        // Move cursor back to correct position
-        for (int i = cursor_pos; i < input_index; i++)
-            terminal_backspace();
-    }
+		// Move cursor back to correct position
+		for (int i = cursor_pos; i < input_index; i++)
+			terminal_cursor_left();
+	}
 }
- 
+
 void shell_init(void)
 {
 	input_index = 0;
@@ -286,22 +281,3 @@ void shell_init(void)
 	history_index = -1;
 	shell_prompt();
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

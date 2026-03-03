@@ -40,5 +40,6 @@ void terminal_putchar(char c);
 void terminal_writestring(const char* data);
 void terminal_backspace(void);
 void terminal_setcolor(uint8_t color);
+void terminal_cursor_left(void);
 
 #endif
