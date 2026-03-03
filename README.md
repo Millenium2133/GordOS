@@ -60,6 +60,7 @@ GordOS is a hobby OS I am making to help me get a better understanding of OSDev.
 
 ### Run The `make` Commands
 **You may need `sudo` for some of these**
+* `make` may give an error the first time you run it. Give it another go if that happens. I do not know why that happens, but I also do not care*
  * `make`: links compiles everything for you.
  * `make iso`: makes the ISO file, it is in the same directory as everything else. Feel free to move it.
  * `make clean`: deletes everything make and make iso.
