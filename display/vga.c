@@ -95,6 +95,21 @@ void terminal_putchar(char c)
 			terminal_scroll();
 		}
 	}
+	else if (c == '\t')
+	{
+		size_t next_tab = (terminal_column + 4) & ~3;
+		while (terminal_column < next_tab && terminal_column < VGA_WIDTH)
+		{
+			terminal_putentryat(' ', terminal_color, terminal_column, terminal_row);
+			terminal_column++;
+		}
+		if (terminal_column == VGA_WIDTH)
+		{
+			terminal_column = 0;
+			if (++terminal_row == VGA_HEIGHT)
+				terminal_scroll();
+		}
+	}
 
 	else
 	{
