@@ -2,7 +2,8 @@
 
 ## Description
 GordOS is a hobby OS I am making to help me get a better understanding of OSDev. This by no means is a "Real OS", It's especially not one you should use (even if you could). THIS IS JUST A HOBBY PROJECT, I BY NO MEANS AM A PROFESSIONAL. I AM NOT RESPONSABLE FOR ANY DAMAGE CAUSED TO YOUR SYSTEMS. USE AT YOUR OWN RISK
-
+## UPDATE
+I will be taking a break from development, to focus on other things like studies and other projects
 ---
 
 ## Technical Specifications
