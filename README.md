@@ -1,76 +1,106 @@
 # GordOS
 
-## Description
-GordOS is a hobby OS I am making to help me get a better understanding of OSDev. This by no means is a "Real OS", It's especially not one you should use (even if you could). THIS IS JUST A HOBBY PROJECT, I BY NO MEANS AM A PROFESSIONAL. I AM NOT RESPONSABLE FOR ANY DAMAGE CAUSED TO YOUR SYSTEMS. USE AT YOUR OWN RISK
-## UPDATE
-## Whats Happening?
+A hobby OS built to learn the fundamentals of OS development. GordOS is not intended for real use — it exists purely as a learning project.
 
-I will be taking a break from development, to focus on other things like studies and other projects.
-Develpment will still be happening, but at a slower pace.
+> **Disclaimer:** I am not a professional. I am not responsible for any damage caused to your system. **Use at your own risk.**
+
 ---
 
+## Development Status
 
-## TODO
-Memory Management, Filesystem (Probably FAT32)
+Development is ongoing but at a reduced pace while I focus on studies and other projects.
+
+**Upcoming work:**
+- Memory management
+- Filesystem (likely FAT32)
+
+---
+
 ## Technical Specifications
 
 ### Build Requirements
-* **Architecture:** i686 (32-bit)
-* **Compiler:** i686-elf-gcc (I built mine from the OSDev gcc cross-compiler wiki, i reccomend you do the same)
-* **Assembler:** i686-elf-as (coverd in the OSDev gcc cross compiler wiki)
-* **Optimization Level:** O2
 
-### Hardware Environment
-* **Platform:** x86 (IBM PC Compatible)
-* **Display:** VGA Text Mode (0xB8000)
-* **Input:** PS/2 Keyboard (Scan Code Set 1)
+| Item | Detail |
+| :--- | :--- |
+| Architecture | i686 (32-bit) |
+| Compiler | `i686-elf-gcc` ([OSDev cross-compiler guide](https://wiki.osdev.org/GCC_Cross-Compiler)) |
+| Assembler | `i686-elf-as` (covered in the same guide) |
+| Optimization | `-O2` |
 
 ### Hardware Requirements
-* **RAM:** The least I've been able to test on is 725mb
-* **CPU:** 32-bit, i686
-* **Video:** VGA text mode
-* **Firmware:** BIOS/Legacy boot
+
+| Component | Requirement |
+| :--- | :--- |
+| CPU | 32-bit i686 |
+| RAM | 725 MB minimum (tested) |
+| Video | VGA text mode |
+| Firmware | BIOS / Legacy boot |
+| Input | PS/2 keyboard (Scan Code Set 1) |
+| Display | VGA Text Mode (`0xB8000`) |
 
 ### Memory Layout
+
 | Section | Start Address | Size |
 | :--- | :--- | :--- |
-| Multiboot | 0x00100000 | 12 Bytes |
-| Kernel Text | 0x0010000C | ~ [Size] |
-| Stack | [Defined in boot.s] | 16 KB |
+| Multiboot | `0x00100000` | 12 bytes |
+| Kernel Text | `0x0010000C` | ~[variable] |
+| Stack | Defined in `boot.s` | 16 KB |
 
 ### Compilation Flags
-* `-ffreestanding`: Build without standard library.
-* `-nostdlib`: Prevent linking standard C startup files.
-* `-fno-stack-protector`: Disable stack smashing protection (requires kernel support).
+
+| Flag | Purpose |
+| :--- | :--- |
+| `-ffreestanding` | Build without the standard library |
+| `-nostdlib` | Prevent linking standard C startup files |
+| `-fno-stack-protector` | Disable stack smashing protection (requires kernel support) |
 
 ---
 
-## How To Get ISO
+## Building GordOS
 
-### Download and Permissions
-**In Terminal:**
-* `git clone https://github.com/Millenium2133/GordOS.git`
-* `sudo chmod -R 777 GordOS/`
-* `cd GordOS`
+### 1. Clone the Repository
 
-### Make Sure The Cross-Compiler Is Ready
-**In Terminal:**
-* `export PREFIX="$HOME/opt/cross"`
-* `export TARGET=i686-elf`
-* `export PATH="$PREFIX/bin:$PATH"`
-* `export PATH="$HOME/opt/cross/bin:$PATH"`
-**Test With**
-* `$TARGET-gcc --version`
-* You shoukd see `i686-elf-gcc (GCC) x.x.x`
-* If not, then oh well.
+```bash
+git clone https://github.com/Millenium2133/GordOS.git
+sudo chmod -R 777 GordOS/
+cd GordOS
+```
 
+### 2. Set Up the Cross-Compiler
 
-### Run The `make` Commands
-**You may need `sudo` for some of these**
-* `make` may give an error the first time you run it. Give it another go if that happens. I do not know why that happens, but I also do not care*
- * `make`: links compiles everything for you.
- * `make iso`: makes the ISO file, it is in the same directory as everything else. Feel free to move it.
- * `make clean`: deletes everything make and make iso.
+```bash
+export PREFIX="$HOME/opt/cross"
+export TARGET=i686-elf
+export PATH="$PREFIX/bin:$PATH"
+export PATH="$HOME/opt/cross/bin:$PATH"
+```
 
+Verify the compiler is ready:
 
-## You now have an ISO, feel free to `dd` it to a USB or hard disk, or maybe even burn it to a DVD or CD.or you could be a normal person and use qemu
+```bash
+$TARGET-gcc --version
+# Expected output: i686-elf-gcc (GCC) x.x.x
+```
+
+### 3. Build and Create the ISO
+
+> **Note:** `make` may error on the first run. If it does, simply run it again.
+
+```bash
+make        # Compile and link everything
+make iso    # Create the ISO file (output to current directory)
+make clean  # Remove all build artifacts
+```
+
+You will now have an ISO file ready to use.
+
+---
+
+## Running GordOS
+
+You can run GordOS in a few different ways:
+
+- **QEMU** — the easiest option for testing
+- **USB drive** — `dd` the ISO to a USB device
+- **Hard disk** — `dd` the ISO to a disk
+- **Optical media** — burn the ISO to a DVD or CD
