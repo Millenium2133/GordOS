@@ -1,6 +1,6 @@
 # GordOS
 
-A hobby OS built to learn the fundamentals of OS development. GordOS is not intended for real use — it exists purely as a learning project.
+A hobby OS built to learn the fundamentals of OS development. GordOS is not intended for real use, it exists purely as a learning project.
 
 > **Disclaimer:** I am not a professional. I am not responsible for any damage caused to your system. **Use at your own risk.**
 
