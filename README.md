@@ -104,3 +104,16 @@ You can run GordOS in a few different ways:
 - **USB drive** — `dd` the ISO to a USB device
 - **Hard disk** — `dd` the ISO to a disk
 - **Optical media** — burn the ISO to a DVD or CD
+
+---
+
+## The future if GordOS
+
+As of right now, GordOS is somewhat stable, However, that does not mean there arent any issues.
+First of all, Only a 16KB stack, which is fine for now, but not for the future. There are some other issues I cbf going over right now, but they are there.
+
+### What will I do after bug fixes?
+- **Physical Memory Manager**
+- **Virtual Memory Manager**
+- **Kernel Heap Allicator**
+- **Filesystem** — FAT32
