@@ -84,7 +84,6 @@ $TARGET-gcc --version
 
 ### 3. Build and Create the ISO
 
-> **Note:** `make` may error on the first run. If it does, simply run it again.
 
 ```bash
 make        # Compile and link everything
