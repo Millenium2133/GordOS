@@ -15,7 +15,7 @@ boot.o: boot/boot.s
 	$(AS) boot/boot.s -o boot.o
 
 shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h
-	$(CC) $(CFLAGS) -c kernel/shell.c - o shell.o
+	$(CC) $(CFLAGS) -c kernel/shell.c -o shell.o
 
 kernel.o: kernel/kernel.c cpu/gdt.h cpu/idt.h drivers/pic.h drivers/keyboard.h display/vga.h display/splash.h lib/string.h kernel/shell.h
 	$(CC) $(CFLAGS) -c kernel/kernel.c -o kernel.o
