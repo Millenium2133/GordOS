@@ -13,6 +13,7 @@
 #include "shell.h"
 #include "multiboot.h"
 #include "pmm.h"
+#include "kmalloc.h"
 
 // Compiler check
 #if defined(__linux__)
@@ -31,7 +32,19 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	idt_init();
 	terminal_initialize();
 	pmm_init(mbi);
+	kmalloc_init();
 	terminal_writestring("PMM Initialized\n");
+
+	// Sanity check for kmalloc
+	void* a = kmalloc(64);
+	void* b = kmalloc(128);
+	kfree(a);
+	void* c = kmalloc(32);
+
+	if (a && b && c)
+		terminal_writestring("kmalloc OK\n");
+	else
+		terminal_writestring("kmalloc FAILED\n");
 
 	splash_show();
 	shell_init();
