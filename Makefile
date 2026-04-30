@@ -3,16 +3,19 @@ AS = i686-elf-as
 LD = i686-elf-gcc
 
 CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
-         -Icpu -Idrivers -Idisplay -Ilib -Ikernel
+         -Icpu -Idrivers -Idisplay -Ilib -Ikernel \
+	-Iboot -Imemory
 
 OBJS = boot.o kernel.o gdt.o gdt_flush.o idt.o idt_flush.o \
-       isr.o pic.o keyboard.o splash.o string.o vga.o shell.o
+       isr.o pic.o keyboard.o splash.o string.o vga.o shell.o pmm.o
 
 GordOS: $(OBJS) boot/linker.ld
 	$(LD) -T boot/linker.ld -o GordOS -ffreestanding -O2 -nostdlib $(OBJS) -lgcc
 
 boot.o: boot/boot.s
 	$(AS) boot/boot.s -o boot.o
+pmm.o: memory/pmm.c memory/pmm.h boot/multiboot.h
+	$(CC) $(CFLAGS) -c memory/pmm.c -o pmm.o
 
 shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h
 	$(CC) $(CFLAGS) -c kernel/shell.c -o shell.o
@@ -54,7 +57,7 @@ iso: GordOS
 	mkdir -p isodir/boot/grub
 	cp GordOS isodir/boot/GordOS
 	cp grub.cfg isodir/boot/grub/grub.cfg
-	grub2-mkrescue -o GordOS.iso isodir
+	grub-mkrescue -o GordOS.iso isodir
 
 clean:
 	rm -rf *.o GordOS GordOS.iso

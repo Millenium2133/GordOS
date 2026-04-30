@@ -11,7 +11,8 @@
 #include "string.h"
 #include "splash.h"
 #include "shell.h"
-
+#include "multiboot.h"
+#include "pmm.h"
 
 // Compiler check
 #if defined(__linux__)
@@ -22,12 +23,15 @@
 #error "This kernel needs to be compiled with an ix86-elf compiler"
 #endif
 
-void kernel_main(void)
+void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 {
+	(void)magic;
 	gdt_init();
 	pic_remap();
 	idt_init();
 	terminal_initialize();
+	pmm_init(mbi);
+	terminal_writestring("PMM Initialized\n");
 
 	splash_show();
 	shell_init();
