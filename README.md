@@ -127,12 +127,17 @@ First create a disk image for ATA storage:
 qemu-img create -f raw disk.img 64M
 ```
 
+Format it as FAT32:
+
+```bash
+mkfs.fat -F 32 disk.img
+```
+
 Then run:
 
 ```bash
-qemu-system-i386 -cdrom GordOS.iso -drive file=disk.img,format=raw
+qemu-system-i386 -cdrom GordOS.iso -drive file=disk.img,format=raw -boot d
 ```
-
 ### Other options
 
 - **USB drive** — `dd` the ISO to a USB device

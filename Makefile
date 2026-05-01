@@ -4,11 +4,11 @@ LD = i686-elf-gcc
 
 CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
          -Icpu -Idrivers -Idisplay -Ilib -Ikernel \
-	-Iboot -Imemory
+	-Iboot -Imemory -Ifs
 
 OBJS = boot.o kernel.o gdt.o gdt_flush.o idt.o idt_flush.o \
        isr.o pic.o keyboard.o splash.o string.o vga.o shell.o pmm.o \
-	kmalloc.o ata.o
+	kmalloc.o ata.o fat32.o
 
 GordOS: $(OBJS) boot/linker.ld
 	$(LD) -T boot/linker.ld -o GordOS -ffreestanding -O2 -nostdlib $(OBJS) -lgcc
@@ -24,6 +24,9 @@ kmalloc.o: memory/kmalloc.c memory/kmalloc.h memory/pmm.h
 
 ata.o: drivers/ata.c drivers/ata.h drivers/pic.c
 	$(CC) $(CFLAGS) -c drivers/ata.c -o ata.o
+
+fat32.o: fs/fat32.c fs/fat32.h drivers/ata.h memory/kmalloc.h
+	$(CC) $(CFLAGS) -Ifs -c fs/fat32.c -o fat32.o
 
 shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h
 	$(CC) $(CFLAGS) -c kernel/shell.c -o shell.o

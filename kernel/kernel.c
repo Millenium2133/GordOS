@@ -15,6 +15,7 @@
 #include "pmm.h"
 #include "kmalloc.h"
 #include "ata.h"
+#include "fat32.h"
 
 // Compiler check
 #if defined(__linux__)
@@ -37,9 +38,15 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	terminal_writestring("PMM Initialized\n");
 
 	if (ata_init() == 0)
-		terminal_writestring("ATA drive detected\n");
+	{
+		terminal_writestring("ATA drive DETECTED\n");
+		if (fat32_init() == 0)
+			terminal_writestring("FAT32 MOUNTED\n");
+		else
+			terminal_writestring("FAT32 mount FAILED\n");
+	}
 	else
-		terminal_writestring("ATA init failed\n");
+		terminal_writestring("ATA init FAILED\n");
 
 
 	// Sanity check for kmalloc
