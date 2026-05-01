@@ -34,6 +34,14 @@ static uint32_t read32(uint8_t* buf, int offset)
            (buf[offset + 3] << 24));
 }
 
+// Convert a character to uppercase
+static char to_upper(char c)
+{
+    if (c >= 'a' && c <= 'z')
+        return c - 32;
+    return c;
+}
+
 // Simple number printer for debugging
 static void print_uint32(uint32_t n)
 {
@@ -61,7 +69,7 @@ static int read_cluster(uint32_t cluster, uint8_t* buffer);
 static uint32_t cluster_to_lba(uint32_t cluster)
 {
     if (cluster < 2)
-	return 0xFFFFFFFF; // Invalid
+        return 0xFFFFFFFF;
     return data_start + (cluster - 2) * sectors_per_cluster;
 }
 
@@ -104,6 +112,17 @@ static int fat_set_cluster(uint32_t cluster, uint32_t value)
     return 0;
 }
 
+// Free an entire cluster chain in the FAT
+static void fat_free_chain(uint32_t cluster)
+{
+    while (cluster >= 2 && cluster < FAT32_EOC)
+    {
+        uint32_t next = fat_next_cluster(cluster);
+        fat_set_cluster(cluster, FAT32_FREE);
+        cluster = next;
+    }
+}
+
 // Find a free cluster and allocate it
 static uint32_t fat_alloc_cluster(void)
 {
@@ -132,7 +151,7 @@ static int read_cluster(uint32_t cluster, uint8_t* buffer)
 static int write_cluster(uint32_t cluster, uint8_t* buffer)
 {
     if (cluster < 2)
-	return -1;
+        return -1;
     uint32_t lba = cluster_to_lba(cluster);
     return ata_write(lba, sectors_per_cluster, buffer);
 }
@@ -314,11 +333,11 @@ int fat32_read_file(const char* path, void* buffer, uint32_t* size)
             }
             name[n] = '\0';
 
-            // Compare
+            // Case insensitive compare
             int match = 1;
             for (j = 0; name[j] || path[j]; j++)
             {
-                if (name[j] != path[j])
+                if (to_upper(name[j]) != to_upper(path[j]))
                 {
                     match = 0;
                     break;
@@ -375,6 +394,79 @@ int fat32_write_file(const char* path, const void* buffer, uint32_t size)
     if (!path || !buffer)
         return -1;
 
+    // Check if file already exists and remove it first
+    uint32_t dir_cluster = root_cluster;
+    uint8_t* scan_buf = kmalloc(sectors_per_cluster * 512);
+    if (!scan_buf)
+        return -1;
+
+    while (dir_cluster >= 2 && dir_cluster < FAT32_EOC)
+    {
+        if (read_cluster(dir_cluster, scan_buf) != 0)
+            break;
+
+        uint32_t entries = (sectors_per_cluster * 512) / 32;
+        uint32_t i;
+
+        for (i = 0; i < entries; i++)
+        {
+            uint8_t* e = scan_buf + (i * 32);
+
+            if (e[0] == 0x00)
+                goto scan_done;
+
+            if ((uint8_t)e[0] == 0xE5)
+                continue;
+
+            uint8_t attr = e[11];
+            if (attr == 0x0F || attr == 0x08)
+                continue;
+
+            if (attr & FAT_ATTR_DIRECTORY)
+                continue;
+
+            // Build filename to compare
+            char name[13];
+            int n = 0;
+            int j;
+            for (j = 0; j < 8 && e[j] != ' '; j++)
+                name[n++] = e[j];
+            if (e[8] != ' ')
+            {
+                name[n++] = '.';
+                for (j = 8; j < 11 && e[j] != ' '; j++)
+                    name[n++] = e[j];
+            }
+            name[n] = '\0';
+
+            // Case insensitive compare
+            int match = 1;
+            for (j = 0; name[j] || path[j]; j++)
+            {
+                if (to_upper(name[j]) != to_upper(path[j])) { match = 0; break; }
+            }
+
+            if (match)
+            {
+                // Free existing cluster chain
+                uint32_t old_cluster = ((uint32_t)read16(e, 20) << 16) | read16(e, 26);
+                if (old_cluster >= 2)
+                    fat_free_chain(old_cluster);
+
+                // Mark entry as deleted
+                e[0] = 0xE5;
+                write_cluster(dir_cluster, scan_buf);
+                goto scan_done;
+            }
+        }
+
+        dir_cluster = fat_next_cluster(dir_cluster);
+    }
+
+scan_done:
+    kfree(scan_buf);
+
+    // Handle empty file
     if (size == 0)
         return fat32_create_entry(path, 0, 0);
 
@@ -456,19 +548,19 @@ static int fat32_create_entry(const char* name, uint32_t cluster, uint32_t size)
                 for (j = 0; j < 11; j++)
                     e[j] = ' ';
 
-                // Write base name
+                // Write base name in uppercase
                 ni = 0;
                 j  = 0;
                 while (name[ni] && name[ni] != '.' && j < 8)
-                    e[j++] = name[ni++];
+                    e[j++] = to_upper(name[ni++]);
 
-                // Write extension
+                // Write extension in uppercase
                 if (name[ni] == '.')
                 {
                     ni++;
                     j = 8;
                     while (name[ni] && j < 11)
-                        e[j++] = name[ni++];
+                        e[j++] = to_upper(name[ni++]);
                 }
 
                 e[11] = FAT_ATTR_ARCHIVE;
