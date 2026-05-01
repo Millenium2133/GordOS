@@ -123,8 +123,110 @@ done:
 
 int fat32_read_file(const char* path, void* buffer, uint32_t* size)
 {
-    (void)path;
-    (void)buffer;
-    (void)size;
-    return -1;
+    if (!path || !buffer || !size)
+        return -1;
+
+    // Start at root directory
+    uint32_t cluster = bpb.root_cluster;
+    uint8_t* buf = kmalloc(sectors_per_cluster * 512);
+    if (!buf)
+        return -1;
+
+    // Find the file in the root directory
+    fat32_entry_t target;
+    int found = 0;
+
+    while (cluster < FAT32_EOC && !found)
+    {
+        if (read_cluster(cluster, buf) != 0)
+            break;
+
+        uint32_t entries = (sectors_per_cluster * 512) / sizeof(fat32_entry_t);
+        fat32_entry_t* entries_ptr = (fat32_entry_t*)buf;
+
+        for (uint32_t i = 0; i < entries; i++)
+        {
+            fat32_entry_t* e = &entries_ptr[i];
+
+            if (e->name[0] == 0x00)
+                goto not_found;
+
+            if ((uint8_t)e->name[0] == 0xE5)
+                continue;
+
+            if (e->attributes == 0x0F)
+                continue;
+
+            if (e->attributes & FAT_ATTR_DIRECTORY)
+                continue;
+
+            // Build 8.3 filename to compare
+            char name[13];
+            int n = 0;
+            for (int j = 0; j < 8 && e->name[j] != ' '; j++)
+                name[n++] = e->name[j];
+            if (e->name[8] != ' ')
+            {
+                name[n++] = '.';
+                for (int j = 8; j < 11 && e->name[j] != ' '; j++)
+                    name[n++] = e->name[j];
+            }
+            name[n] = '\0';
+
+            // Compare with requested path
+            // Simple comparison, path should be uppercase 8.3 format
+            int match = 1;
+            for (int j = 0; name[j] || path[j]; j++)
+            {
+                if (name[j] != path[j])
+                {
+                    match = 0;
+                    break;
+                }
+            }
+
+            if (match)
+            {
+                target = *e;
+                found = 1;
+                break;
+            }
+        }
+
+        cluster = fat_next_cluster(cluster);
+    }
+
+not_found:
+    if (!found)
+    {
+        kfree(buf);
+        return -1;
+    }
+
+    // Read the file contents by following the cluster chain
+    uint32_t file_cluster = ((uint32_t)target.cluster_high << 16) | target.cluster_low;
+    uint32_t bytes_read = 0;
+    uint32_t file_size  = target.file_size;
+    uint8_t* out = (uint8_t*)buffer;
+
+    while (file_cluster < FAT32_EOC && bytes_read < file_size)
+    {
+        if (read_cluster(file_cluster, buf) != 0)
+            break;
+
+        // How many bytes to copy from this cluster
+        uint32_t cluster_bytes = sectors_per_cluster * 512;
+        uint32_t remaining     = file_size - bytes_read;
+        uint32_t to_copy       = remaining < cluster_bytes ? remaining : cluster_bytes;
+
+        for (uint32_t i = 0; i < to_copy; i++)
+            out[bytes_read + i] = buf[i];
+
+        bytes_read    += to_copy;
+        file_cluster   = fat_next_cluster(file_cluster);
+    }
+
+    *size = bytes_read;
+    kfree(buf);
+    return 0;
 }
