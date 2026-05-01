@@ -1,6 +1,6 @@
 # GordOS
 
-A hobby OS built from scratch in C and x86 Assembly, made to learn the fundamentals of OS development. GordOS is not intended for real use — it exists purely as a learning project.
+A hobby OS built from scratch in C and x86 Assembly, made to learn the fundamentals of OS development. GordOS is not intended for real use. It exists purely as a learning project.
 
 > **Disclaimer:** I am not a professional. I am not responsible for any damage caused to your system. **Use at your own risk.**
 
@@ -8,7 +8,7 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 
 ## 🎉 Milestone Reached: Full FAT32 Read/Write Support
 
-GordOS can now create, write, and read files entirely from within the OS itself — no Linux middleman required. Type `write MYFILE.TXT Hello world` and `cat MYFILE.TXT` and it just works. Built from scratch. On bare metal. In C and Assembly.
+GordOS can now create, write, and read files entirely from within the OS itself, no Linux middleman required. Type `write MYFILE.TXT Hello world` and `cat MYFILE.TXT` and it just works. Built from scratch. On bare metal. In C and Assembly.
 
 Not bad for an OS that sucks (for now :3).
 
@@ -23,7 +23,7 @@ Not bad for an OS that sucks (for now :3).
 - Physical memory manager with bitmap allocator
 - Kernel heap allocator (kmalloc/kfree)
 - ATA PIO disk driver
-- FAT32 filesystem — mount, list directories, read files, **create and write files**
+- FAT32 filesystem: mount, list directories, read files, **create and write files**
 - Shell commands: `help`, `clear`, `echo`, `about`, `ls`, `cat`, `touch`, `write`
 
 ---
