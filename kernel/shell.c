@@ -1,6 +1,8 @@
 #include "shell.h"
 #include "vga.h"
 #include "string.h"
+#include "fat32.h"
+#include "kmalloc.h"
 
 #define INPUT_BUFFER_SIZE 256
 
@@ -54,6 +56,8 @@ static void cmd_help(void)
 	terminal_writestring("	help	- Shows this message\n");
 	terminal_writestring("	clear	- Clears screen\n");
 	terminal_writestring("	echo	- Print text to screen\n");
+	terminal_writestring("	ls	- List files in directory\n");
+	terminal_writestring("	cat	- Print file contents\n");
 	terminal_writestring("	about	- About GordOS\n");
 }
 
@@ -92,6 +96,47 @@ static void cmd_about(void)
 	terminal_writestring("	https://github.com/Millenium2133/GordOS\n");
 }
 
+// ls
+static void cmd_ls(void)
+{
+	if (fat32_list_dir("/") != 0)
+		terminal_writestring("ls: filesystem not available\n");
+}
+
+// cat
+static void cmd_cat(const char* args)
+{
+	if (!args || *args == '\0')
+	{
+		terminal_writestring("Usage: car FILENAME\n");
+		return;
+	}
+
+	// Allocate a buffer for the file (max 64KB for now)
+	uint32_t size = 0;
+	void* buf = kmalloc(65536);
+	if (!buf)
+	{
+		terminal_writestring("cat: out of memory\n");
+		return;
+	}
+
+	if (fat32_read_file(args, buf, &size) != 0)
+	{
+		terminal_writestring("cat: file not found\n");
+		kfree(buf);
+		return;
+	}
+
+	//print the fine contents character by character
+	char* data = (char*)buf;
+	for (uint32_t i = 0; i < size; i++)
+		terminal_putchar(data[i]);
+	terminal_putchar('\n');
+
+	kfree(buf);
+}
+
 // ++++++++++++++++++++
 // + Command Dispatch +
 // ++++++++++++++++++++
@@ -110,12 +155,22 @@ static void shell_execute(const char* input)
 
 	if (shell_strcmp(input, "help") == 0)
 		cmd_help();
+
 	else if (shell_strcmp(input, "clear") == 0)
 		cmd_clear();
+
 	else if (shell_strncmp(input, "echo", 4) == 0)
 		cmd_echo(get_args(input, 4));
+
 	else if (shell_strcmp(input, "about") == 0)
 		cmd_about();
+
+	else if (shell_strcmp(input, "ls") == 0)
+		cmd_ls();
+
+	else if (shell_strncmp(input, "cat", 3) == 0)
+		cmd_cat(get_args(input, 3));
+
 	else
 	{
 		terminal_writestring("Unknown Command: ");
