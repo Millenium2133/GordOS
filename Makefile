@@ -8,18 +8,22 @@ CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
 
 OBJS = boot.o kernel.o gdt.o gdt_flush.o idt.o idt_flush.o \
        isr.o pic.o keyboard.o splash.o string.o vga.o shell.o pmm.o \
-	kmalloc.o
+	kmalloc.o ata.o
 
 GordOS: $(OBJS) boot/linker.ld
 	$(LD) -T boot/linker.ld -o GordOS -ffreestanding -O2 -nostdlib $(OBJS) -lgcc
 
 boot.o: boot/boot.s
 	$(AS) boot/boot.s -o boot.o
+
 pmm.o: memory/pmm.c memory/pmm.h boot/multiboot.h
 	$(CC) $(CFLAGS) -c memory/pmm.c -o pmm.o
 
 kmalloc.o: memory/kmalloc.c memory/kmalloc.h memory/pmm.h
 	$(CC) $(CFLAGS) -c memory/kmalloc.c -o kmalloc.o
+
+ata.o: drivers/ata.c drivers/ata.h drivers/pic.c
+	$(CC) $(CFLAGS) -c drivers/ata.c -o ata.o
 
 shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h
 	$(CC) $(CFLAGS) -c kernel/shell.c -o shell.o

@@ -14,6 +14,7 @@
 #include "multiboot.h"
 #include "pmm.h"
 #include "kmalloc.h"
+#include "ata.h"
 
 // Compiler check
 #if defined(__linux__)
@@ -34,6 +35,12 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	pmm_init(mbi);
 	kmalloc_init();
 	terminal_writestring("PMM Initialized\n");
+
+	if (ata_init() == 0)
+		terminal_writestring("ATA drive detected\n");
+	else
+		terminal_writestring("ATA init failed\n");
+
 
 	// Sanity check for kmalloc
 	void* a = kmalloc(64);
