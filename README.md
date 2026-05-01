@@ -163,4 +163,3 @@ qemu-system-i386 -cdrom GordOS.iso -drive file=disk.img,format=raw -boot d
 - No virtual memory or paging — kernel runs in a flat physical memory model
 - Filenames must be uppercase 8.3 format (e.g. `TEST.TXT`) due to FAT32 limitations
 - No subdirectory support yet — all commands only work in the root directory
-- Writing to an existing file creates a duplicate entry rather than overwriting
