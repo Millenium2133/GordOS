@@ -152,7 +152,7 @@ int ata_write(uint32_t lba, uint8_t count, const void* buffer)
 
 		// write 256 words
 		for (int i = 0; i < 256; i++)
-			outw(ATA_DATA, buf[1]);
+			outw(ATA_DATA, buf[i]);
 
 		// Advance buffer by one sector
 		buf += 256;
