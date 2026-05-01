@@ -1,29 +1,33 @@
 # GordOS
 
-A hobby OS built to learn the fundamentals of OS development. GordOS is not intended for real use, it exists purely as a learning project.
+A hobby OS built from scratch in C and x86 Assembly, made to learn the fundamentals of OS development. GordOS is not intended for real use — it exists purely as a learning project.
 
 > **Disclaimer:** I am not a professional. I am not responsible for any damage caused to your system. **Use at your own risk.**
 
 ---
 
-## Development Status
+## What GordOS Can Do
 
-Development is ongoing but at a reduced pace while I focus on studies and other projects.
-
-**Completed:**
-- Multiboot bootloader via GRUB
-- GDT and IDT setup
-- 8259 PIC remapping and IRQ handling
-- VGA text mode terminal with scrolling and colour support
-- PS/2 keyboard driver with full scancode translation
-- Interactive shell with command history and arrow key navigation
+- Boots via GRUB on real x86 hardware and QEMU
+- VGA text mode terminal with colour, scrolling, and a hardware cursor
+- PS/2 keyboard driver with full scancode translation, shift, and arrow keys
+- Interactive shell with command history and mid-line cursor movement
 - Physical memory manager with bitmap allocator
 - Kernel heap allocator (kmalloc/kfree)
 - ATA PIO disk driver
+- FAT32 filesystem — mount, list directories, read files
+- Shell commands: `help`, `clear`, `echo`, `about`, `ls`, `cat`
+
+---
+
+## Development Status
+
+Active development. Currently working on FAT32 file writing support.
 
 **Upcoming work:**
-- FAT32 filesystem
-- Shell commands that interact with the filesystem (ls, touch, cat, etc.)
+- FAT32 file writing. `touch`, file creation from within the OS
+- Subdirectory navigation
+- Virtual memory and paging
 
 ---
 
@@ -49,8 +53,7 @@ Development is ongoing but at a reduced pace while I focus on studies and other 
 | Video | VGA text mode |
 | Firmware | BIOS / Legacy boot |
 | Input | PS/2 keyboard (Scan Code Set 1) |
-| Display | VGA Text Mode (`0xB8000`) |
-| Storage | ATA disk (for filesystem, optional) |
+| Storage | ATA disk (required for filesystem) |
 
 ### Memory Layout
 
@@ -67,7 +70,7 @@ Development is ongoing but at a reduced pace while I focus on studies and other 
 | :--- | :--- |
 | `-ffreestanding` | Build without the standard library |
 | `-nostdlib` | Prevent linking standard C startup files |
-| `-fno-stack-protector` | Disable stack smashing protection (requires kernel support) |
+| `-fno-stack-protector` | Disable stack smashing protection |
 
 ---
 
@@ -83,7 +86,6 @@ sudo apt install xorriso mtools grub-pc-bin grub-common
 
 ```bash
 git clone https://github.com/Millenium2133/GordOS.git
-sudo chmod -R $USER:$USER GordOS/
 cd GordOS
 ```
 
@@ -109,36 +111,37 @@ $TARGET-gcc --version
 
 ```bash
 make        # Compile and link everything
-make iso    # Create the ISO file (output to current directory)
+make iso    # Create the bootable ISO
 make clean  # Remove all build artifacts
 ```
-
-You will now have an ISO file ready to use.
 
 ---
 
 ## Running GordOS
 
-### QEMU (recommended for testing)
+### QEMU (recommended)
 
-First create a disk image for ATA storage:
+Create a FAT32 disk image:
 
 ```bash
 qemu-img create -f raw disk.img 64M
-```
-
-Format it as FAT32:
-
-```bash
 mkfs.fat -F 32 disk.img
 ```
 
-Then run:
+To put files on the disk from Linux:
+
+```bash
+echo "Hello from GordOS!" > test.txt
+mcopy -i disk.img test.txt ::TEST.TXT
+```
+
+Then boot:
 
 ```bash
 qemu-system-i386 -cdrom GordOS.iso -drive file=disk.img,format=raw -boot d
 ```
-### Other options
+
+### Other Options
 
 - **USB drive** — `dd` the ISO to a USB device
 - **Hard disk** — `dd` the ISO to a disk
@@ -148,12 +151,7 @@ qemu-system-i386 -cdrom GordOS.iso -drive file=disk.img,format=raw -boot d
 
 ## Known Issues
 
-- 16KB stack, which is fine for now but will need to be addressed in the future
+- 16KB stack — fine for now but will need addressing in the future
 - No virtual memory or paging — kernel runs in a flat physical memory model
-- Backspace and arrow keys have some edge case bugs in the shell
-
-## What's Next
-
-- **FAT32 Filesystem**
-- **Filesystem shell commands** — ls, touch, cat, mkdir
-- **Virtual Memory Manager**
+- Filenames must be uppercase 8.3 format (e.g. `TEST.TXT`) due to FAT32 limitations
+- No subdirectory support yet — `ls` and `cat` only work in the root directory
