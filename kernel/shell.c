@@ -58,6 +58,8 @@ static void cmd_help(void)
 	terminal_writestring("	echo	- Print text to screen\n");
 	terminal_writestring("	ls	- List files in directory\n");
 	terminal_writestring("	cat	- Print file contents\n");
+	terminal_writestring("	touch	- Create empty file\n");
+	terminal_writestring("	write	- Write text to file\n");
 	terminal_writestring("	about	- About GordOS\n");
 }
 
@@ -137,6 +139,54 @@ static void cmd_cat(const char* args)
 	kfree(buf);
 }
 
+// touch
+static void cmd_touch(const char* args)
+{
+	if (!args || *args == '\0')
+	{
+		terminal_writestring("Usage: touch FILENAME\n");
+		return;
+	}
+
+	if (fat32_write_file(args, "", 0) == 0)
+	{
+		terminal_writestring("Created: ");
+		terminal_writestring(args);
+		terminal_putchar('\n');
+	}
+}
+
+// write
+static void cmd_write(const char* args)
+{
+	if (!args || *args == '\0')
+	{
+		terminal_writestring("usage: write FILENAME TEXT\n");
+		return;
+	}
+
+	// Split filename and content
+	const char* content = args;
+	int fi = 0;
+	char filename[13];
+
+	while (*content && *content != ' ' && fi < 12)
+		filename[fi++] = *content++;
+	filename[fi] = '\0';
+
+	if (*content == ' ')
+		content++;
+
+	if (fat32_write_file(filename, content, strlen(content)) == 0)
+	{
+		terminal_writestring("Written to: ");
+		terminal_writestring(filename);
+		terminal_putchar('\n');
+	}
+	else
+		terminal_writestring("write: failed\n");
+}
+
 // ++++++++++++++++++++
 // + Command Dispatch +
 // ++++++++++++++++++++
@@ -170,6 +220,12 @@ static void shell_execute(const char* input)
 
 	else if (shell_strncmp(input, "cat", 3) == 0)
 		cmd_cat(get_args(input, 3));
+
+	else if (shell_strncmp(input, "touch", 5) == 0)
+		cmd_touch(get_args(input, 5));
+
+	else if (shell_strncmp(input, "write", 5) == 0)
+		cmd_write(get_args(input, 5));
 
 	else
 	{
