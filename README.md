@@ -10,9 +10,20 @@ A hobby OS built to learn the fundamentals of OS development. GordOS is not inte
 
 Development is ongoing but at a reduced pace while I focus on studies and other projects.
 
+**Completed:**
+- Multiboot bootloader via GRUB
+- GDT and IDT setup
+- 8259 PIC remapping and IRQ handling
+- VGA text mode terminal with scrolling and colour support
+- PS/2 keyboard driver with full scancode translation
+- Interactive shell with command history and arrow key navigation
+- Physical memory manager with bitmap allocator
+- Kernel heap allocator (kmalloc/kfree)
+- ATA PIO disk driver
+
 **Upcoming work:**
-- Memory management
-- Filesystem (likely FAT32)
+- FAT32 filesystem
+- Shell commands that interact with the filesystem (ls, touch, cat, etc.)
 
 ---
 
@@ -26,6 +37,8 @@ Development is ongoing but at a reduced pace while I focus on studies and other 
 | Compiler | `i686-elf-gcc` ([OSDev cross-compiler guide](https://wiki.osdev.org/GCC_Cross-Compiler)) |
 | Assembler | `i686-elf-as` (covered in the same guide) |
 | Optimization | `-O2` |
+| ISO tool | `xorriso` |
+| Disk tool | `mtools` |
 
 ### Hardware Requirements
 
@@ -37,6 +50,7 @@ Development is ongoing but at a reduced pace while I focus on studies and other 
 | Firmware | BIOS / Legacy boot |
 | Input | PS/2 keyboard (Scan Code Set 1) |
 | Display | VGA Text Mode (`0xB8000`) |
+| Storage | ATA disk (for filesystem, optional) |
 
 ### Memory Layout
 
@@ -45,6 +59,7 @@ Development is ongoing but at a reduced pace while I focus on studies and other 
 | Multiboot | `0x00100000` | 12 bytes |
 | Kernel Text | `0x0010000C` | ~[variable] |
 | Stack | Defined in `boot.s` | 16 KB |
+| Heap | Dynamic | Managed by kmalloc |
 
 ### Compilation Flags
 
@@ -58,7 +73,13 @@ Development is ongoing but at a reduced pace while I focus on studies and other 
 
 ## Building GordOS
 
-### 1. Clone the Repository
+### 1. Install Dependencies
+
+```bash
+sudo apt install xorriso mtools grub-pc-bin grub-common
+```
+
+### 2. Clone the Repository
 
 ```bash
 git clone https://github.com/Millenium2133/GordOS.git
@@ -66,7 +87,7 @@ sudo chmod -R $USER:$USER GordOS/
 cd GordOS
 ```
 
-### 2. Set Up the Cross-Compiler
+### 3. Set Up the Cross-Compiler
 
 ```bash
 export PREFIX="$HOME/opt/cross"
@@ -82,8 +103,9 @@ $TARGET-gcc --version
 # Expected output: i686-elf-gcc (GCC) x.x.x
 ```
 
-### 3. Build and Create the ISO
+### 4. Build and Create the ISO
 
+> **Note:** `make` may error on the first run. If it does, simply run it again.
 
 ```bash
 make        # Compile and link everything
@@ -97,22 +119,36 @@ You will now have an ISO file ready to use.
 
 ## Running GordOS
 
-You can run GordOS in a few different ways:
+### QEMU (recommended for testing)
 
-- **QEMU** — the easiest option for testing
+First create a disk image for ATA storage:
+
+```bash
+qemu-img create -f raw disk.img 64M
+```
+
+Then run:
+
+```bash
+qemu-system-i386 -cdrom GordOS.iso -drive file=disk.img,format=raw
+```
+
+### Other options
+
 - **USB drive** — `dd` the ISO to a USB device
 - **Hard disk** — `dd` the ISO to a disk
 - **Optical media** — burn the ISO to a DVD or CD
 
 ---
 
-## The future if GordOS
+## Known Issues
 
-As of right now, GordOS is somewhat stable, However, that does not mean there arent any issues.
-First of all, Only a 16KB stack, which is fine for now, but not for the future. There are some other issues I cbf going over right now, but they are there.
+- 16KB stack, which is fine for now but will need to be addressed in the future
+- No virtual memory or paging — kernel runs in a flat physical memory model
+- Backspace and arrow keys have some edge case bugs in the shell
 
-### What will I do after bug fixes?
-- **Physical Memory Manager**
+## What's Next
+
+- **FAT32 Filesystem**
+- **Filesystem shell commands** — ls, touch, cat, mkdir
 - **Virtual Memory Manager**
-- **Kernel Heap Allicator**
-- **Filesystem** — FAT32
