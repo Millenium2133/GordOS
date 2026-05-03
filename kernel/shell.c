@@ -59,6 +59,7 @@ static void cmd_help(void)
 	terminal_writestring("	ls	- List files in directory\n");
 	terminal_writestring("	cat	- Print file contents\n");
 	terminal_writestring("	touch	- Create empty file\n");
+	terminal_writestring("	rm	- Delete a file\n");
 	terminal_writestring("	write	- Write text to file\n");
 	terminal_writestring("	about	- About GordOS\n");
 }
@@ -187,6 +188,25 @@ static void cmd_write(const char* args)
 		terminal_writestring("write: failed\n");
 }
 
+// rm
+static void cmd_rm(const char* args)
+{
+	if (!args || *args == '\0')
+	{
+		terminal_writestring("Usage: rm FILENAME\n");
+		return;
+	}
+
+	if (fat32_delete_file(args) == 0)
+	{
+		terminal_writestring("Deleted: ");
+		terminal_writestring(args);
+		terminal_putchar('\n');
+	}
+	else
+		terminal_writestring("rm: file not found\n");
+}
+
 // ++++++++++++++++++++
 // + Command Dispatch +
 // ++++++++++++++++++++
@@ -226,6 +246,9 @@ static void shell_execute(const char* input)
 
 	else if (shell_strncmp(input, "write", 5) == 0)
 		cmd_write(get_args(input, 5));
+
+	else if (shell_strncmp(input, "rm", 2) == 0)
+		cmd_rm(get_args(input, 2));
 
 	else
 	{
