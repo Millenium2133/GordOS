@@ -28,11 +28,11 @@
 
 void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 {
+	terminal_initialize();
 	(void)magic;
 	gdt_init();
 	pic_remap();
 	idt_init();
-	terminal_initialize();
 	pmm_init(mbi);
 	kmalloc_init();
 	terminal_writestring("PMM Initialized\n");

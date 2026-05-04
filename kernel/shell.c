@@ -56,11 +56,12 @@ static void cmd_help(void)
 	terminal_writestring("	help	- Shows this message\n");
 	terminal_writestring("	clear	- Clears screen\n");
 	terminal_writestring("	echo	- Print text to screen\n");
-	terminal_writestring("	ls	- List files in directory\n");
-	terminal_writestring("	cat	- Print file contents\n");
+	terminal_writestring("	ls		- List files in directory\n");
+	terminal_writestring("	cat		- Print file contents\n");
 	terminal_writestring("	touch	- Create empty file\n");
-	terminal_writestring("	rm	- Delete a file\n");
+	terminal_writestring("	rm		- Delete a file\n");
 	terminal_writestring("	write	- Write text to file\n");
+	terminal_writestring("	rename	- Rename a file\n");
 	terminal_writestring("	about	- About GordOS\n");
 }
 
@@ -207,6 +208,43 @@ static void cmd_rm(const char* args)
 		terminal_writestring("rm: file not found\n");
 }
 
+// rename
+static void cmd_rename(const char* args)
+{
+	if (!args || *args == '\0')
+	{
+		terminal_writestring("Usage: rename OLDNAME NEWNAME\n");
+		return;
+	}
+
+	// split into two filenames
+	const char * second = args;
+	int fi = 0;
+	char oldname[13];
+
+	while (*second && *second != ' ' && fi < 12)
+		oldname[fi++] = *second++;
+	oldname[fi] = '\0';
+
+	if (!second || *second == '\0')
+	{
+		terminal_writestring("rename: missing new filename\n");
+		return;
+	}
+
+	if (*second == ' ')
+		second++;
+
+	if (fat32_rename_file(oldname, second) == 0)
+	{
+		terminal_writestring("Renamed to: ");
+		terminal_writestring(second);
+		terminal_putchar('\n');
+	}
+	else
+		terminal_writestring("rename: file not found\n");
+}
+
 // ++++++++++++++++++++
 // + Command Dispatch +
 // ++++++++++++++++++++
@@ -249,6 +287,9 @@ static void shell_execute(const char* input)
 
 	else if (shell_strncmp(input, "rm", 2) == 0)
 		cmd_rm(get_args(input, 2));
+
+	else if (shell_strncmp(input, "rename", 6) == 0)
+		cmd_rename(get_args(input, 6));
 
 	else
 	{
