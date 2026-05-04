@@ -60,6 +60,8 @@ static void cmd_help(void)
 	terminal_writestring("	pwd		- Print working directory\n");
 	terminal_writestring("	cat		- Print file contents\n");
 	terminal_writestring("	touch	- Create empty file\n");
+	terminal_writestring("	mkdir	- Create directory\n");
+	terminal_writestring("	cd		- Change directory\n");
 	terminal_writestring("	rm		- Delete a file\n");
 	terminal_writestring("	write	- Write text to file\n");
 	terminal_writestring("	rename	- Rename a file\n");
@@ -252,6 +254,39 @@ static void cmd_pwd(void)
 	terminal_putchar('\n');
 }
 
+// mkdir
+static void cmd_mkdir(const char* args)
+{
+	if (!args || *args == '\0')
+	{
+		terminal_writestring("Usage: mkdir DIRNAME\n");
+		return;
+	}
+
+	if (fat32_mkdir(args) == 0)
+	{
+		terminal_writestring("Created directory: ");
+		terminal_writestring(args);
+		terminal_putchar('\n');
+	}
+	else
+		terminal_writestring("mkdir: Failed");
+}
+
+// cd
+static void cmd_cd(const char* args)
+{
+	if (!args || *args == '\0')
+	{
+		terminal_writestring("Usage: cd DIRNAME\n");
+		return;
+	}
+
+	if (fat32_cd(args) != 0)
+		terminal_writestring("cd: Directory not found\n");
+}
+
+
 // ++++++++++++++++++++
 // + Command Dispatch +
 // ++++++++++++++++++++
@@ -301,6 +336,12 @@ static void shell_execute(const char* input)
 	else if (shell_strcmp(input, "pwd") == 0)
 		cmd_pwd();
 
+	else if (shell_strncmp(input, "mkdir", 5) == 0)
+		cmd_mkdir(get_args(input, 5));
+
+	else if (shell_strncmp(input, "cd", 2) == 0)
+		cmd_cd(get_args(input, 2));
+
 	else
 	{
 		terminal_writestring("Unknown Command: ");
@@ -317,6 +358,8 @@ static void shell_prompt(void)
 {
 	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
 	terminal_writestring("GordOS");
+	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
+	terminal_writestring(fat32_get_cwd_path());
 	terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 	terminal_writestring("> ");
 	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
