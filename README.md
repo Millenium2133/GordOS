@@ -152,6 +152,17 @@ qemu-system-i386 -cdrom GordOS.iso -drive file=disk.img,format=raw -boot d
 - **Hard disk** — `dd` the ISO to a disk
 - **Optical media** — burn the ISO to a DVD or CD
 
+### To Use Real x86 Hardware
+
+- **Make ISO and use DD for a USB** - Have not tested using a DVD or DD'ing to the Hard Disk itself
+- **Format Hard drive with FAT32** - Either a partition or the whole drive
+- **Boot from USB** - It should be as simple as that.
+
+## Notes With Real Hardware
+- **Less stable** - Real hardware, while not the hardest thing to test with, it isnt the most ideal, so things may work on QEMU way before it gets fixed for real hardware
+- **USB should not be removed** - It probably could be, but its safer not to
+- **Data Loss** - You need to have a Hard Disk with either a FAT32 partition. Making the FAT32 partition could cause data loss
+> **I AM NOT RESPONSABLE FOR ANY DATA LOSS THAT MAY OCCOUR, YOU HAVE BEEN WARNED**
 ---
 
 ## Known Issues
