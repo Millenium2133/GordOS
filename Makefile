@@ -22,7 +22,7 @@ pmm.o: memory/pmm.c memory/pmm.h boot/multiboot.h
 kmalloc.o: memory/kmalloc.c memory/kmalloc.h memory/pmm.h
 	$(CC) $(CFLAGS) -c memory/kmalloc.c -o kmalloc.o
 
-ata.o: drivers/ata.c drivers/ata.h drivers/pic.c drivers/pic.h display/vga.h
+ata.o: drivers/ata.c drivers/ata.h drivers/pic.h
 	$(CC) $(CFLAGS) -c drivers/ata.c -o ata.o
 
 fat32.o: fs/fat32.c fs/fat32.h drivers/ata.h memory/kmalloc.h

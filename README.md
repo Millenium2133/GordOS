@@ -25,7 +25,6 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 Active development. The filesystem is now fully functional for basic operations.
 
 **Upcoming work:**
-- Subdirectory navigation. `mkdir`, `cd`
 - Tab autocomplete
 - Virtual memory and paging
 - File overwrite support improvements
@@ -108,7 +107,6 @@ $TARGET-gcc --version
 
 ### 4. Build and Create the ISO
 
-> **Note:** `make` may error on the first run. If it does, simply run it again.
 
 ```bash
 make        # Compile and link everything
@@ -154,5 +152,4 @@ qemu-system-i386 -cdrom GordOS.iso -drive file=disk.img,format=raw -boot d
 
 - 16KB stack, fine for now but will need addressing in the future
 - No virtual memory or paging. kernel runs in a flat physical memory model
-- Filenames must be uppercase 8.3 format (e.g. `TEST.TXT`) due to FAT32 limitations
-- No subdirectory support yet, all commands only work in the root directory
+- Filenames must be uppercase 8.3 format (e.g. `TEST.TXT`) due to FAT32 limitations, however, you can enter the filename in lowercase

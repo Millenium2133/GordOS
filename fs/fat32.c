@@ -46,25 +46,6 @@ static char to_upper(char c)
     return c;
 }
 
-// Simple number printer for debugging
-static void print_uint32(uint32_t n)
-{
-    if (n == 0)
-    {
-        terminal_putchar('0');
-        return;
-    }
-    char buf[12];
-    int i = 0;
-    while (n > 0)
-    {
-        buf[i++] = '0' + (n % 10);
-        n /= 10;
-    }
-    while (i > 0)
-        terminal_putchar(buf[--i]);
-}
-
 // Forward declarations
 static int fat32_create_entry(const char* name, uint32_t cluster, uint32_t size);
 static int read_cluster(uint32_t cluster, uint8_t* buffer);
@@ -186,35 +167,6 @@ int fat32_init(void)
     fat_start  = reserved_sectors;
     data_start = fat_start + (fat_count * fat_size);
 
-    // Debug output
-    terminal_writestring("root_cluster=");
-    print_uint32(root_cluster);
-    terminal_putchar('\n');
-
-    terminal_writestring("reserved_sectors=");
-    print_uint32(reserved_sectors);
-    terminal_putchar('\n');
-
-    terminal_writestring("fat_size=");
-    print_uint32(fat_size);
-    terminal_putchar('\n');
-
-    terminal_writestring("fat_count=");
-    print_uint32(fat_count);
-    terminal_putchar('\n');
-
-    terminal_writestring("data_start=");
-    print_uint32(data_start);
-    terminal_putchar('\n');
-
-    terminal_writestring("sectors_per_cluster=");
-    print_uint32(sectors_per_cluster);
-    terminal_putchar('\n');
-
-    terminal_writestring("total_sectors=");
-    print_uint32(total_sectors);
-    terminal_putchar('\n');
-
 	// Start in root directory
 	cwd_cluster = root_cluster;
 	cwd_path[0] = '/';
@@ -231,10 +183,6 @@ int fat32_list_dir(const char* path)
     uint8_t* buf = kmalloc(sectors_per_cluster * 512);
     if (!buf)
         return -1;
-
-    terminal_writestring("Reading LBA: ");
-    print_uint32(cluster_to_lba(cwd_cluster));
-    terminal_putchar('\n');
 
     while (cluster >= 2 && cluster < FAT32_EOC)
     {
