@@ -20,4 +20,7 @@ int fat32_write_file(const char* path, const void* buffer, uint32_t size);
 int fat32_delete_file(const char* path);
 int fat32_rename_file(const char* oldpath, const char* newpath);
 
+uint32_t fat32_get_cwd_cluster(void);
+const char* fat32_get_cwd_path(void);
+
 #endif

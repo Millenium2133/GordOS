@@ -22,8 +22,12 @@ static uint32_t data_start;
 // Helper to read a uint16 from a byte array at offset
 static uint16_t read16(uint8_t* buf, int offset)
 {
-    return (uint16_t)(buf[offset] | (buf[offset + 1] << 8));
+	return (uint16_t)(buf[offset] | (buf[offset + 1] << 8));
 }
+
+// Current working directory
+static uint32_t cwd_cluster;
+static char cwd_path[256];
 
 // Helper to read a uint32 from a byte array at offset
 static uint32_t read32(uint8_t* buf, int offset)
@@ -211,6 +215,11 @@ int fat32_init(void)
     print_uint32(total_sectors);
     terminal_putchar('\n');
 
+	// Start in root directory
+	cwd_cluster = root_cluster;
+	cwd_path[0] = '/';
+	cwd_path[1] = '\0';
+
     return 0;
 }
 
@@ -218,13 +227,13 @@ int fat32_list_dir(const char* path)
 {
     (void)path;
 
-    uint32_t cluster = root_cluster;
+    uint32_t cluster = cwd_cluster;
     uint8_t* buf = kmalloc(sectors_per_cluster * 512);
     if (!buf)
         return -1;
 
     terminal_writestring("Reading LBA: ");
-    print_uint32(cluster_to_lba(root_cluster));
+    print_uint32(cluster_to_lba(cwd_cluster));
     terminal_putchar('\n');
 
     while (cluster >= 2 && cluster < FAT32_EOC)
@@ -284,7 +293,7 @@ int fat32_read_file(const char* path, void* buffer, uint32_t* size)
     if (!path || !buffer || !size)
         return -1;
 
-    uint32_t cluster = root_cluster;
+    uint32_t cluster = cwd_cluster;
     uint8_t* buf = kmalloc(sectors_per_cluster * 512);
     if (!buf)
         return -1;
@@ -395,7 +404,7 @@ int fat32_write_file(const char* path, const void* buffer, uint32_t size)
         return -1;
 
     // Check if file already exists and remove it first
-    uint32_t dir_cluster = root_cluster;
+    uint32_t dir_cluster = cwd_cluster;
     uint8_t* scan_buf = kmalloc(sectors_per_cluster * 512);
     if (!scan_buf)
         return -1;
@@ -522,7 +531,7 @@ int fat32_delete_file(const char* path)
 	if (!path)
 		return -1;
 
-	uint32_t dir_cluster = root_cluster;
+	uint32_t dir_cluster = cwd_cluster;
 	uint8_t* buf = kmalloc(sectors_per_cluster * 512);
 	if (!buf)
 		return -1;
@@ -603,7 +612,7 @@ int fat32_rename_file(const char* oldpath, const char* newpath)
 	if (!oldpath || !newpath)
 		return -1;
 
-	uint32_t dir_cluster = root_cluster;
+	uint32_t dir_cluster = cwd_cluster;
 	uint8_t* buf = kmalloc(sectors_per_cluster * 512);
 	if (!buf)
 		return -1;
@@ -690,7 +699,7 @@ not_found:
 
 static int fat32_create_entry(const char* name, uint32_t cluster, uint32_t size)
 {
-    uint32_t dir_cluster = root_cluster;
+    uint32_t dir_cluster = cwd_cluster;
     uint8_t* buf = kmalloc(sectors_per_cluster * 512);
     if (!buf)
         return -1;
@@ -767,3 +776,14 @@ static int fat32_create_entry(const char* name, uint32_t cluster, uint32_t size)
     kfree(buf);
     return -1;
 }
+
+uint32_t fat32_get_cwd_cluster(void)
+{
+	return cwd_cluster;
+}
+
+const char* fat32_get_cwd_path(void)
+{
+	return cwd_path;
+}
+

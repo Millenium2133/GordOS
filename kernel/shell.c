@@ -57,6 +57,7 @@ static void cmd_help(void)
 	terminal_writestring("	clear	- Clears screen\n");
 	terminal_writestring("	echo	- Print text to screen\n");
 	terminal_writestring("	ls		- List files in directory\n");
+	terminal_writestring("	pwd		- Print working directory");
 	terminal_writestring("	cat		- Print file contents\n");
 	terminal_writestring("	touch	- Create empty file\n");
 	terminal_writestring("	rm		- Delete a file\n");
@@ -245,6 +246,12 @@ static void cmd_rename(const char* args)
 		terminal_writestring("rename: file not found\n");
 }
 
+static void cmd_pwd(void)
+{
+	terminal_writestring(fat32_get_cwd_path());
+	terminal_putchar('\n');
+}
+
 // ++++++++++++++++++++
 // + Command Dispatch +
 // ++++++++++++++++++++
@@ -290,6 +297,9 @@ static void shell_execute(const char* input)
 
 	else if (shell_strncmp(input, "rename", 6) == 0)
 		cmd_rename(get_args(input, 6));
+
+	else if (shell_strcmp(input, "pwd") == 0)
+		cmd_pwd;
 
 	else
 	{
