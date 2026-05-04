@@ -6,14 +6,6 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 
 ---
 
-## 🎉 Milestone Reached: Full FAT32 Read/Write Support
-
-GordOS can now create, write, and read files entirely from within the OS itself, no Linux middleman required. Type `write MYFILE.TXT Hello world` and `cat MYFILE.TXT` and it just works. Built from scratch. On bare metal. In C and Assembly.
-
-Not bad for an OS that sucks (for now :3).
-
----
-
 ## What GordOS Can Do
 
 - Boots via GRUB on real x86 hardware and QEMU
@@ -23,8 +15,8 @@ Not bad for an OS that sucks (for now :3).
 - Physical memory manager with bitmap allocator
 - Kernel heap allocator (kmalloc/kfree)
 - ATA PIO disk driver
-- FAT32 filesystem: mount, list directories, read files, **create and write files**
-- Shell commands: `help`, `clear`, `echo`, `about`, `ls`, `cat`, `touch`, `write`
+- FAT32 filesystem: mount, list directories, read files, **Create, Write Delete and Rename files**
+- Shell commands: `help`, `clear`, `echo`, `about`, `ls`, `cat`, `touch`, `write`, `rename`
 
 ---
 
@@ -33,9 +25,10 @@ Not bad for an OS that sucks (for now :3).
 Active development. The filesystem is now fully functional for basic operations.
 
 **Upcoming work:**
-- Subdirectory navigation
+- Subdirectory navigation. `mkdir`, `cd`
+- Tab autocomplete
 - Virtual memory and paging
-- File overwrite support (currently creates a new entry if file exists)
+- File overwrite support improvements
 
 ---
 
@@ -159,7 +152,7 @@ qemu-system-i386 -cdrom GordOS.iso -drive file=disk.img,format=raw -boot d
 
 ## Known Issues
 
-- 16KB stack — fine for now but will need addressing in the future
-- No virtual memory or paging — kernel runs in a flat physical memory model
+- 16KB stack, fine for now but will need addressing in the future
+- No virtual memory or paging. kernel runs in a flat physical memory model
 - Filenames must be uppercase 8.3 format (e.g. `TEST.TXT`) due to FAT32 limitations
-- No subdirectory support yet — all commands only work in the root directory
+- No subdirectory support yet, all commands only work in the root directory
