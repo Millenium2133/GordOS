@@ -111,6 +111,7 @@ $TARGET-gcc --version
 ```bash
 make        # Compile and link everything
 make iso    # Create the bootable ISO
+make disk   # Creates FAT32 disk.img for GordOS on QEMU
 make clean  # Remove all build artifacts
 ```
 
@@ -125,6 +126,10 @@ Create a FAT32 disk image:
 ```bash
 qemu-img create -f raw disk.img 64M
 mkfs.fat -F 32 disk.img
+
+OR
+
+make disk
 ```
 
 To put files on the disk from Linux:
@@ -133,6 +138,7 @@ To put files on the disk from Linux:
 echo "Hello from GordOS!" > test.txt
 mcopy -i disk.img test.txt ::TEST.TXT
 ```
+You can also use GordOS's built in commands now
 
 Then boot:
 
