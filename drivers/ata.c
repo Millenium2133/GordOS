@@ -1,5 +1,6 @@
 #include "ata.h"
 #include "pic.h"
+#include "vga.h"
 
 //16 bit version of inb/outb
 static inline uint16_t inw(uint16_t port)
@@ -12,6 +13,23 @@ static inline uint16_t inw(uint16_t port)
 static inline void outw(uint16_t port, uint16_t value)
 {
 	asm volatile("outw %0, %1" : : "a"(value), "Nd"(port));
+}
+
+// Delay wait (for debugging on real hardware)
+static void ata_400ns_delay(void)
+{
+	inb(0x3F6);
+	inb(0x3F6);
+	inb(0x3F6);
+	inb(0x3F6);
+}
+
+// Pring hex (for more real hardware debugging)
+static void print_hex8(uint8_t val)
+{
+	const char* hex = "0123456789ABCDEF";
+	terminal_putchar(hex[(val >> 4) & 0xF]);
+	terminal_putchar(hex[val & 0xF]);
 }
 
 // Wait till drive is no longer busy
@@ -61,8 +79,23 @@ static void ata_setup(uint32_t lba, uint8_t count)
 
 int ata_init(void)
 {
+	// Debug
+	uint8_t status = inb(ATA_STATUS);
+	terminal_writestring("ATA status at entry: 0x");
+	print_hex8(status);
+	terminal_putchar('\n');
+
 	//Select master drive
 	outb(ATA_DRIVE_SELECT, 0xA0);
+	ata_400ns_delay();
+
+	status = inb(ATA_STATUS);
+	terminal_writestring("ATA Status after select: 0x");
+	print_hex8(status);
+	terminal_putchar('\n');
+
+	if (status == 0x00 || status == 0xFF)
+		return -1;
 
 	// Clear LBA and sector count registers
 	outb(ATA_SECTOR_COUNT, 0);
@@ -74,7 +107,7 @@ int ata_init(void)
 	outb(ATA_COMMAND, 0xEC);
 
 	// Read status
-	uint8_t status = inb(ATA_STATUS);
+	status = inb(ATA_STATUS);
 	if (status == 0) // 0 = no drive present
 		return -1;
 

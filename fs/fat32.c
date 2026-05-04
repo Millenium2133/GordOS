@@ -1027,4 +1027,3 @@ const char* fat32_get_cwd_path(void)
 {
 	return cwd_path;
 }
-
