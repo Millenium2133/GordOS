@@ -15,8 +15,8 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 - Physical memory manager with bitmap allocator
 - Kernel heap allocator (kmalloc/kfree)
 - ATA PIO disk driver
-- FAT32 filesystem: mount, list directories, read files, print working directory,  **Create, Write Delete and Rename files**
-- Shell commands: `help`, `clear`, `echo`, `about`, `ls`, `cat`, `touch`, `write`, `rename`, `pwd`
+- FAT32 filesystem: mount, list directories, read files, print working directory,  **Create, Write Delete and Rename files**, **Directory creation and changing**
+- Shell commands: `help`, `clear`, `echo`, `about`, `ls`, `mkdir`, `cd`, `cat`, `touch`, `write`, `rename`, `pwd`
 
 ---
 
