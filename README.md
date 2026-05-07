@@ -17,6 +17,7 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 - ATA PIO disk driver
 - FAT32 filesystem: mount, list directories, read files, print working directory,  **Create, Write Delete and Rename files**, **Directory creation and changing**
 - Shell commands: `help`, `clear`, `echo`, `about`, `ls`, `mkdir`, `cd`, `cat`, `touch`, `write`, `rename`, `pwd`
+- Tab Autocomplete (Use tab to autocomplete filenames, directories and commands)
 
 ---
 
@@ -25,7 +26,6 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 Active development. The filesystem is now fully functional for basic operations.
 
 **Upcoming work:**
-- Tab autocomplete
 - Virtual memory and paging
 - File overwrite support improvements
 

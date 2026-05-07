@@ -60,6 +60,7 @@ static void keyboard_handler(struct registers regs)
     }
 
     if (scancode == 0x2A || scancode == 0x36) { shift_pressed = 1; return; }
+    if (scancode == 0x0F) { shell_handle_char(KEY_TAB); return; }
     if (scancode == 0x1C) { shell_handle_char('\n'); return; }
     if (scancode == 0x0E) { shell_handle_char('\b'); return; }
 

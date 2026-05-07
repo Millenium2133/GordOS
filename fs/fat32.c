@@ -236,6 +236,87 @@ done:
     return 0;
 }
 
+int fat32_find_prefix(const char* prefix, char matches[][13], int max_matches)
+{
+	if (!prefix || !matches)
+		return 0;
+
+	uint32_t cluster = cwd_cluster;
+	uint8_t* buf = kmalloc(sectors_per_cluster * 512);
+	if (!buf)
+		return 0;
+
+	int count = 0;
+	int prefix_len = 0;
+	while (prefix[prefix_len])
+		prefix_len++;
+
+	while (cluster >= 2 && cluster < FAT32_EOC)
+	{
+		if (read_cluster(cluster, buf) != 0)
+			break;
+
+		uint32_t entries = (sectors_per_cluster * 512) / 32;
+		uint32_t i;
+
+		for (i = 0; i < entries; i++)
+		{
+			uint8_t* e = buf + (i * 32);
+
+			if (e[0] == 0x00)
+				goto done;
+
+			if ((uint8_t)e[0] == 0xE5)
+				continue;
+
+			uint8_t attr = e[11];
+			if (attr == 0x0F || attr == 0x08)
+				continue;
+
+			// Buint 8.3 filename
+			char name[13];
+			int n = 0;
+			int j;
+
+			for (j = 0; j < 8 && e[j] != ' '; j++)
+				name[n++] = e[j];
+			if (e[8] != ' ')
+			{
+				name[n++] = '.';
+				for (j = 8; j < 11 && e[j] != ' '; j++)
+					name[n++] = e[j];
+			}
+			name[n] = '\0';
+
+			// Check if name starts with prefix (case insensitive)
+			int match = 1;
+			for (j = 0; j < prefix_len; j++)
+			{
+				if (to_upper(name[j]) != to_upper(prefix[j]))
+				{
+					match = 0;
+					break;
+				}
+			}
+
+			if (match && count < max_matches)
+			{
+				// Copyname into matches array
+				for (j = 0; name[j] && j < 12; j++)
+					matches[count][j] = name[j];
+				matches[count][j] = '\0';
+				count++;
+			}
+		}
+
+		cluster = fat_next_cluster(cluster);
+	}
+
+done:
+	kfree(buf);
+	return count;
+}
+
 int fat32_read_file(const char* path, void* buffer, uint32_t* size)
 {
     if (!path || !buffer || !size)

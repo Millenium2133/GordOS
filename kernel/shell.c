@@ -424,7 +424,11 @@ void shell_handle_char(char c)
 			for (int i = cursor_pos; i < input_index + 1; i++)
 				terminal_cursor_left();
 		}
+
+
+
 	}
+	
 	else if ((unsigned char)c == KEY_LEFT)
 	{
 		if (cursor_pos > 0)
@@ -433,6 +437,7 @@ void shell_handle_char(char c)
 			terminal_cursor_left();
 		}
 	}
+	
 	else if ((unsigned char)c == KEY_RIGHT)
 	{
 		if (cursor_pos < input_index)
@@ -441,6 +446,132 @@ void shell_handle_char(char c)
 			cursor_pos++;
 		}
 	}
+	else if ((unsigned char)c == KEY_TAB)
+	{
+		// Extract current word being typed (from last space to cursor)
+		char prefix[INPUT_BUFFER_SIZE];
+		int pi = 0;
+		int word_start = cursor_pos;
+		while (word_start > 0 && input_buffer[word_start - 1] != ' ')
+			word_start--;
+		for (int i = word_start; i < cursor_pos; i++)
+			prefix[pi++] = input_buffer[i];
+		prefix[pi] = '\0';
+
+		// Check if we are still on the command word (no space before cursor)
+		int has_space = 0;
+		for (int i = 0; i < cursor_pos; i++)
+		{
+			if (input_buffer[i] == ' ') { has_space = 1; break; }
+		}
+
+		char matches[16][13];
+		int count = 0;
+
+		if (!has_space)
+		{
+			// Complete command names from the built-in list
+			static const char* commands[] = {
+				"help", "clear", "echo", "about", "ls", "pwd",
+				"cat", "touch", "mkdir", "cd", "rm", "write",
+				"rename", 0
+			};
+			for (int ci = 0; commands[ci] != 0 && count < 16; ci++)
+			{
+				// Check if command starts with prefix
+				int match = 1;
+				for (int j = 0; j < pi; j++)
+				{
+					if (commands[ci][j] == '\0' || commands[ci][j] != prefix[j])
+					{
+						match = 0;
+						break;
+					}
+				}
+				if (match)
+				{
+					int j;
+					for (j = 0; commands[ci][j] && j < 12; j++)
+						matches[count][j] = commands[ci][j];
+					matches[count][j] = '\0';
+					count++;
+				}
+			}
+		}
+		else
+		{
+			// Complete filenames/directories from the filesystem
+			count = fat32_find_prefix(prefix, matches, 16);
+		}
+
+		if (count == 1)
+		{
+			// Find end of current word in buffer
+			int word_end = cursor_pos;
+			while (word_end < input_index && input_buffer[word_end] != ' ')
+				word_end++;
+
+			int old_len = word_end - word_start;
+			int new_len = 0;
+			while (matches[0][new_len]) new_len++;
+			int diff = new_len - old_len;
+
+			// Shift buffer contents to accommodate new length
+			if (diff > 0)
+			{
+				for (int i = input_index; i >= word_end; i--)
+					input_buffer[i + diff] = input_buffer[i];
+			}
+			else if (diff < 0)
+			{
+				for (int i = word_end + diff; i <= input_index; i++)
+					input_buffer[i] = input_buffer[i - diff];
+			}
+
+			// Write completed name into buffer
+			for (int i = 0; i < new_len; i++)
+				input_buffer[word_start + i] = matches[0][i];
+
+			input_index += diff;
+			cursor_pos = word_start + new_len;
+
+			// Move terminal cursor back to word_start so we redraw
+			// over the prefix text, not after it
+			for (int i = word_start; i < word_end; i++)
+				terminal_cursor_left();
+
+			// Redraw from word_start to end, plus trailing space to
+			// erase any leftover characters if new name is shorter
+			for (int i = word_start; i < input_index; i++)
+				terminal_putchar(input_buffer[i]);
+			terminal_putchar(' ');
+
+			// Move hardware cursor back to correct position
+			for (int i = cursor_pos; i < input_index + 1; i++)
+				terminal_cursor_left();
+		}
+		else if (count > 1)
+		{
+			// Print all matches on a new line
+			terminal_putchar('\n');
+			for (int i = 0; i < count; i++)
+			{
+				terminal_writestring(matches[i]);
+				terminal_putchar(' ');
+			}
+			terminal_putchar('\n');
+
+			// Reprint prompt and current buffer contents
+			shell_prompt();
+			for (int i = 0; i < input_index; i++)
+				terminal_putchar(input_buffer[i]);
+
+			// Move cursor back to correct position if not at end
+			for (int i = cursor_pos; i < input_index; i++)
+				terminal_cursor_left();
+		}
+	}
+
 	else if ((unsigned char)c == KEY_UP)
 	{
 		int new_index = history_index + 1;
@@ -459,6 +590,7 @@ void shell_handle_char(char c)
 			}
 		}
 	}
+	
 	else if ((unsigned char)c == KEY_DOWN)
 	{
 		history_index--;
@@ -483,6 +615,7 @@ void shell_handle_char(char c)
 			}
 		}
 	}
+	
 	else if (input_index < INPUT_BUFFER_SIZE - 1)
 	{
 		// Insert character at cursor position
