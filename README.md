@@ -25,10 +25,26 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 
 Active development. The filesystem is now fully functional for basic operations.
 
-**Upcoming work:**
+**Upcoming work (roughly in order):**
+
+**Near term**
 - Virtual memory and paging
 - File overwrite support improvements
+- Subdirectory navigation in `cat`, `write`, `rm`, `rename`
+- FAT32 Long filename (LFN) support
 
+**Medium Term**
+- Proper syscall interface
+- User mode (ring 3)
+- Basic process/task structure
+- A timer driver (PIT,IRQ0)
+
+**Long term**
+- A simple scheduler
+- ELF executable loading
+- Proper VFS layer abstracting FAT32 behind a unified file interface
+- Serial Port driver (Mainly for real hardware debugging, but still useful for other things)
+- More shell built ins as the OS grows
 ---
 
 ## Technical Specifications
