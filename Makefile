@@ -8,7 +8,7 @@ CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
 
 OBJS = boot.o kernel.o gdt.o gdt_flush.o idt.o idt_flush.o \
        isr.o pic.o keyboard.o splash.o string.o vga.o shell.o pmm.o \
-	kmalloc.o ata.o fat32.o
+	kmalloc.o ata.o fat32.o paging.o
 
 GordOS: $(OBJS) boot/linker.ld
 	$(LD) -T boot/linker.ld -o GordOS -ffreestanding -O2 -nostdlib $(OBJS) -lgcc
@@ -18,6 +18,9 @@ boot.o: boot/boot.s
 
 pmm.o: memory/pmm.c memory/pmm.h boot/multiboot.h
 	$(CC) $(CFLAGS) -c memory/pmm.c -o pmm.o
+
+paging.o: memory/paging.c memory/paging.h memory/pmm.h
+	$(CC) $(CFLAGS) -c memory/paging.c -o paging.o
 
 kmalloc.o: memory/kmalloc.c memory/kmalloc.h memory/pmm.h
 	$(CC) $(CFLAGS) -c memory/kmalloc.c -o kmalloc.o

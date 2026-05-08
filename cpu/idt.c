@@ -19,6 +19,7 @@ void irq_handler(struct registers regs)
 }
 
 void terminal_writestring(const char* data);
+void terminal_putchar(char c);
 
 #define IDT_ENTRIES 256
 
@@ -165,8 +166,26 @@ void isr_handler(struct registers regs)
 {
 	terminal_writestring("EXEPTION: ");
 	terminal_writestring(exeption_names[regs.int_no]);
-	terminal_writestring("\n");
+	
+	if (regs.int_no == 14)
+	{
+		uint32_t faulting_address;
+		asm volatile("mov %%cr2, %0" : "=r"(faulting_address));
+		terminal_writestring(" at 0x");
 
+		// Print address as hex
+		for (int i = 28; i >= 0; i -= 4)
+		{
+			uint8_t nibble = (faulting_address >> i) & 0xF;
+			terminal_putchar(nibble < 10 ? '0' + nibble : 'A' + nibble - 10);
+		}
+
+		// Print error code
+		terminal_writestring(regs.err_code & 1 ? " (protection)" : " (not present)");
+		terminal_writestring(regs.err_code & 2 ? " write" : " read");
+	}
+
+	terminal_putchar('\n');
 	for (;;)
 	{
 		asm volatile("hlt");

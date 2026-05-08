@@ -16,6 +16,7 @@
 #include "kmalloc.h"
 #include "ata.h"
 #include "fat32.h"
+#include "paging.h"
 
 // Compiler check
 #if defined(__linux__)
@@ -34,6 +35,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	pic_remap();
 	idt_init();
 	pmm_init(mbi);
+	paging_init();
 	kmalloc_init();
 	terminal_writestring("PMM Initialized\n");
 
