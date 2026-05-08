@@ -17,15 +17,9 @@
 #include "ata.h"
 #include "fat32.h"
 #include "paging.h"
+#include "pit.h"
 
-// Compiler check
-#if defined(__linux__)
-#error "You are not using a cross compiler"
-#endif
 
-#if !defined(__i386__)
-#error "This kernel needs to be compiled with an ix86-elf compiler"
-#endif
 
 void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 {
@@ -66,6 +60,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	shell_init();
 
 	keyboard_init();
+	pit_init(1000); // 1000Hz timer frequency
 	asm volatile("sti");
 
 	// Stops my CPU form running away

@@ -1,0 +1,27 @@
+{
+    "configurations": [
+        {
+            "name": "GordOS",
+            "includePath": [
+                "${workspaceFolder}/boot",
+                "${workspaceFolder}/cpu",
+                "${workspaceFolder}/drivers",
+                "${workspaceFolder}/display",
+                "${workspaceFolder}/lib",
+                "${workspaceFolder}/kernel",
+                "${workspaceFolder}/memory",
+                "${workspaceFolder}/fs"
+            ],
+            "defines": [
+                "__i386__"
+            ],
+            "compilerPath": "/home/hamish/opt/cross/bin/i686-elf-gcc",
+            "cStandard": "gnu99",
+            "intelliSenseMode": "gcc-x86",
+            "compilerArgs": [
+                "-ffreestanding"
+            ]
+        }
+    ],
+    "version": 4
+}
