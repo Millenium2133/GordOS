@@ -8,7 +8,7 @@ CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
 
 OBJS = boot.o kernel.o gdt.o gdt_flush.o idt.o idt_flush.o \
        isr.o pic.o keyboard.o splash.o string.o vga.o shell.o pmm.o \
-	kmalloc.o ata.o fat32.o paging.o pit.o
+	kmalloc.o ata.o fat32.o paging.o pit.o rtc.o
 
 GordOS: $(OBJS) boot/linker.ld
 	$(LD) -T boot/linker.ld -o GordOS -ffreestanding -O2 -nostdlib $(OBJS) -lgcc
@@ -18,6 +18,9 @@ boot.o: boot/boot.s
 
 pit.o: drivers/pit.c drivers/pit.h drivers/pic.h cpu/idt.h
 	$(CC) $(CFLAGS) -c drivers/pit.c -o pit.o
+
+rtc.o: drivers/rtc.c drivers/rtc.h drivers/pic.h
+	$(CC) $(CFLAGS) -c drivers/rtc.c -o rtc.o
 
 pmm.o: memory/pmm.c memory/pmm.h boot/multiboot.h
 	$(CC) $(CFLAGS) -c memory/pmm.c -o pmm.o
@@ -34,7 +37,7 @@ ata.o: drivers/ata.c drivers/ata.h drivers/pic.h
 fat32.o: fs/fat32.c fs/fat32.h drivers/ata.h memory/kmalloc.h
 	$(CC) $(CFLAGS) -Ifs -c fs/fat32.c -o fat32.o
 
-shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h
+shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h drivers/rtc.h
 	$(CC) $(CFLAGS) -c kernel/shell.c -o shell.o
 
 kernel.o: kernel/kernel.c cpu/gdt.h cpu/idt.h drivers/pic.h drivers/keyboard.h display/vga.h display/splash.h lib/string.h kernel/shell.h
@@ -84,4 +87,8 @@ disk:
 	qemu-img create -f raw disk.img 64M
 	mkfs.fat -F 32 disk.img
 
-.PHONY: clean iso
+run: GordOS.iso
+	@test -f disk.img || (echo "ERROR: disk.img not found, run 'make disk' first" && exit 1)
+	qemu-system-i386 -boot order=d -rtc base=localtime -cdrom GordOS.iso -drive file=disk.img,format=raw,if=ide,index=0
+
+.PHONY: clean iso run

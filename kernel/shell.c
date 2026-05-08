@@ -3,6 +3,7 @@
 #include "string.h"
 #include "fat32.h"
 #include "kmalloc.h"
+#include "rtc.h"
 
 #define INPUT_BUFFER_SIZE 256
 
@@ -65,6 +66,7 @@ static void cmd_help(void)
 	terminal_writestring("	rm		- Delete a file\n");
 	terminal_writestring("	write	- Write text to file\n");
 	terminal_writestring("	rename	- Rename a file\n");
+	terminal_writestring("	time	- Show current date and time\n");
 	terminal_writestring("	about	- About GordOS\n");
 }
 
@@ -286,6 +288,46 @@ static void cmd_cd(const char* args)
 		terminal_writestring("cd: Directory not found\n");
 }
 
+// time
+static void print_two_digits(uint8_t n)
+{
+	char buf[3];
+	buf[0] = '0' + (n / 10);
+	buf[1] = '0' + (n % 10);
+	buf[2] = '\0';
+	terminal_writestring(buf);
+}
+
+static void print_year(uint16_t y)
+{
+	char buf[5];
+	buf[0] = '0' + ((y / 1000) % 10);
+	buf[1] = '0' + ((y / 100) % 10);
+	buf[2] = '0' + ((y / 10) % 10);
+	buf[3] = '0' + (y % 10);
+	buf[4] = '\0';
+	terminal_writestring(buf);
+}
+
+static void cmd_time(void)
+{
+	rtc_time_t t;
+	rtc_read_time(&t);
+
+	print_two_digits(t.hours);
+	terminal_putchar(':');
+	print_two_digits(t.minutes);
+	terminal_putchar(':');
+	print_two_digits(t.seconds);
+	terminal_writestring("  ");
+	print_year(t.year);
+	terminal_putchar('-');
+	print_two_digits(t.month);
+	terminal_putchar('-');
+	print_two_digits(t.day);
+	terminal_putchar('\n');
+}
+
 
 // ++++++++++++++++++++
 // + Command Dispatch +
@@ -341,6 +383,9 @@ static void shell_execute(const char* input)
 
 	else if (shell_strncmp(input, "cd", 2) == 0)
 		cmd_cd(get_args(input, 2));
+
+	else if (shell_strcmp(input, "time") == 0)
+		cmd_time();
 
 	else
 	{
@@ -474,7 +519,7 @@ void shell_handle_char(char c)
 			static const char* commands[] = {
 				"help", "clear", "echo", "about", "ls", "pwd",
 				"cat", "touch", "mkdir", "cd", "rm", "write",
-				"rename", 0
+				"rename", "time", 0
 			};
 			for (int ci = 0; commands[ci] != 0 && count < 16; ci++)
 			{
