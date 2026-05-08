@@ -18,6 +18,7 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 - FAT32 filesystem: mount, list directories, read files, print working directory,  **Create, Write Delete and Rename files**, **Directory creation and changing**
 - Shell commands: `help`, `clear`, `echo`, `about`, `ls`, `mkdir`, `cd`, `cat`, `touch`, `write`, `rename`, `pwd`
 - Tab Autocomplete (Use tab to autocomplete filenames, directories and commands)
+- Identity mapped paging
 
 ---
 
@@ -28,7 +29,7 @@ Active development. The filesystem is now fully functional for basic operations.
 **Upcoming work (roughly in order):**
 
 **Near term**
-- Virtual memory and paging
+- Virtual memory
 - File overwrite support improvements
 - Subdirectory navigation in `cat`, `write`, `rm`, `rename`
 - FAT32 Long filename (LFN) support
