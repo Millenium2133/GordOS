@@ -115,7 +115,7 @@ static void cmd_cat(const char* args)
 {
 	if (!args || *args == '\0')
 	{
-		terminal_writestring("Usage: car FILENAME\n");
+		terminal_writestring("Usage: cat FILENAME\n");
 		return;
 	}
 

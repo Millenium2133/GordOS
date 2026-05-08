@@ -14,24 +14,14 @@ typedef struct block_header
 
 static block_header_t* heap_start = 0;
 
-// Ask PMM for a new page and turn it into a block
+// Ask PMM for contiguous pages and turn them into a block
 static block_header_t* new_block(size_t size)
 {
-    // How many pages do we need?
     size_t pages_needed = (size + HEADER_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    block_header_t* block = 0;
-
-    for (size_t i = 0; i < pages_needed; i++)
-    {
-        void* page = pmm_alloc_page();
-        if (!page)
-            return 0; // out of memory
-
-        // First page becomes the block header
-        if (i == 0)
-            block = (block_header_t*)page;
-    }
+    block_header_t* block = pmm_alloc_contiguous(pages_needed);
+    if (!block)
+        return 0;
 
     block->size = (pages_needed * PAGE_SIZE) - HEADER_SIZE;
     block->free = 0;

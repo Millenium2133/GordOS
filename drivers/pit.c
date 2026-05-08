@@ -23,7 +23,8 @@ void pit_init(uint32_t frequency)
 	// at its base frequency of 1,193,182 Hz
 	uint32_t divisor = PIT_BASE_HZ / frequency;
 
-	// Command byte: channel 0, lobyte/hibite access, square wave mode
+	// Command byte: channel 0, lobyte/hibyte access, square wave mode
+	outb(PIT_COMMAND, 0x36);
 	outb(PIT_CHANNEL0, (uint8_t)(divisor & 0xFF));
 	outb(PIT_CHANNEL0, (uint8_t)((divisor >> 8) & 0xFF));
 

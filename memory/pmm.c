@@ -77,6 +77,28 @@ void pmm_init(multiboot_info_t* mbi)
 }
 
 
+void* pmm_alloc_contiguous(size_t n)
+{
+	for (uint32_t i = 0; i + n <= MAX_PAGES; i++)
+	{
+		int ok = 1;
+		for (size_t j = 0; j < n; j++)
+		{
+			if (bitmap_test(i + j)) { ok = 0; break; }
+		}
+		if (ok)
+		{
+			for (size_t j = 0; j < n; j++)
+			{
+				bitmap_set(i + j);
+				free_pages--;
+			}
+			return (void*)(i * PAGE_SIZE);
+		}
+	}
+	return 0;
+}
+
 void* pmm_alloc_page(void)
 {
 	for (uint32_t i = 0; i < MAX_PAGES; i++)
