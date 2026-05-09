@@ -6,10 +6,9 @@ SECTIONS
 {
     . = 2M;
 
-    .multiboot : { KEEP(*(.multiboot)) }
-
-    . = ALIGN(4K);
-    .boot : { *(.boot) }
+    .boot : {
+        KEEP(*(.boot))
+    }
 
     . = ALIGN(4K);
     . += KERNEL_VIRTUAL_BASE;
