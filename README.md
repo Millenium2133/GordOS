@@ -18,7 +18,7 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 - FAT32 filesystem: mount, list directories, read files, print working directory,  **Create, Write Delete and Rename files**, **Directory creation and changing**
 - Shell commands: `help`, `clear`, `echo`, `about`, `ls`, `mkdir`, `cd`, `cat`, `touch`, `write`, `rename`, `pwd`
 - Tab Autocomplete (Use tab to autocomplete filenames, directories and commands)
-- Identity mapped paging
+- Higher half kernel at virtual 0xC0200000 with identity-mapped low memory
 
 ---
 
@@ -74,13 +74,12 @@ Active development. The filesystem is now fully functional for basic operations.
 
 ### Memory Layout
 
-| Section | Start Address | Size |
+| Section | Physical | Virtual |
 | :--- | :--- | :--- |
-| Multiboot | `0x00100000` | 12 bytes |
-| Kernel Text | `0x0010000C` | ~[variable] |
-| Stack | Defined in `boot.s` | 16 KB |
-| Heap | Dynamic | Managed by kmalloc |
-
+| Multiboot header | `0x00200000` | `0x00200000` |
+| Bootstrap (.boot) | `0x00201000` | `0x00201000` |
+| Kernel (.text/.rodata/.data/.bss) | `0x00202000+` | `0xC0202000+` |
+| Stack | (in .bss) | higher half, 16 KB |
 ### Compilation Flags
 
 | Flag | Purpose |
@@ -185,5 +184,4 @@ qemu-system-i386 -cdrom GordOS.iso -drive file=disk.img,format=raw -boot d
 ## Known Issues
 
 - 16KB stack, fine for now but will need addressing in the future
-- No virtual memory or paging. kernel runs in a flat physical memory model
 - Filenames must be uppercase 8.3 format (e.g. `TEST.TXT`) due to FAT32 limitations, however, you can enter the filename in lowercase

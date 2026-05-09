@@ -11,23 +11,6 @@ static uint32_t page_table_0[1024] __attribute__((aligned(4096))); // 0MB - 4MB
 
 void paging_init(void)
 {
-	// Step 1: Clear the page directory
-	for (int i = 0; i < 1024; i++)
-		page_directory[i] = 0;
-
-	// Step 2: Identity map the first 4MB via page_table_0
-	for (int i = 0; i < 1024; i++)
-		page_table_0[i] = (i * 0x1000) | PAGE_PRESENT | PAGE_WRITEABLE;
-
-	// Step 3: Install page_table_0 into the page directory
-	page_directory[0] = (uint32_t)page_table_0 | PAGE_PRESENT | PAGE_WRITEABLE;
-
-	// Step 4: load the page directory address into CR3
-	asm volatile(
-		"mov %0, %%cr3\n"
-		"mov %%cr0, %%eax\n"
-		"or $0x80000000, %%eax\n"
-		"mov %%eax, %%cr0\n"
-		: : "r"(page_directory) : "eax"
-	);
+	// Paging is set up in boot.s before kerel.main runs (higher half kernel)
+	// This file will host higher level mapping helpers later
 }
