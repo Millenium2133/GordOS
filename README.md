@@ -6,46 +6,54 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 
 ---
 
+## Milestone Reached: Higher-Half Kernel
+
+GordOS now runs as a proper higher-half kernel, with the kernel mapped at virtual `0xC0000000` while low physical memory remains identity-mapped for hardware access. This is the foundation for user mode and process isolation down the line.
+
+---
+
 ## What GordOS Can Do
 
 - Boots via GRUB on real x86 hardware and QEMU
 - VGA text mode terminal with colour, scrolling, and a hardware cursor
 - PS/2 keyboard driver with full scancode translation, shift, and arrow keys
 - Interactive shell with command history and mid-line cursor movement
+- Tab autocomplete for both commands and filenames/directories
 - Physical memory manager with bitmap allocator
-- Kernel heap allocator (kmalloc/kfree)
+- Kernel heap allocator (kmalloc/kfree) with splitting and coalescing
 - ATA PIO disk driver
-- FAT32 filesystem: mount, list directories, read files, print working directory,  **Create, Write Delete and Rename files**, **Directory creation and changing**
-- Shell commands: `help`, `clear`, `echo`, `about`, `ls`, `mkdir`, `cd`, `cat`, `touch`, `write`, `rename`, `pwd`
-- Tab Autocomplete (Use tab to autocomplete filenames, directories and commands)
-- Higher half kernel at virtual 0xC0200000 with identity-mapped low memory
+- FAT32 filesystem: mount, list directories, read files, create, write, delete, and rename files, directory creation and navigation
+- Higher-half kernel at virtual `0xC0000000` with identity-mapped low memory
+- Page fault handler that prints the faulting address from CR2 and error code
+- PIT driver at 1000Hz (timer_ticks, timer_sleep)
+- RTC driver reading real wall-clock time from CMOS
+- Shell commands: `help`, `clear`, `echo`, `about`, `ls`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `time`
 
 ---
 
 ## Development Status
 
-Active development. The filesystem is now fully functional for basic operations.
+Active development.
 
 **Upcoming work (roughly in order):**
 
 **Near term**
-- Virtual memory
-- File overwrite support improvements
-- Subdirectory navigation in `cat`, `write`, `rm`, `rename`
-- FAT32 Long filename (LFN) support
+- Subdirectory navigation in `cat`, `write`, `rm`, `rename` (currently only works in cwd)
+- FAT32 long filename (LFN) support
+- File overwrite improvements
 
-**Medium Term**
-- Proper syscall interface
+**Medium term**
+- Syscall interface (int 0x80)
 - User mode (ring 3)
 - Basic process/task structure
-- A timer driver (PIT,IRQ0)
+- Round-robin scheduler
 
 **Long term**
-- A simple scheduler
 - ELF executable loading
 - Proper VFS layer abstracting FAT32 behind a unified file interface
-- Serial Port driver (Mainly for real hardware debugging, but still useful for other things)
-- More shell built ins as the OS grows
+- Serial port driver (useful for real hardware debugging)
+- More shell built-ins as the OS grows
+
 ---
 
 ## Technical Specifications
@@ -74,19 +82,21 @@ Active development. The filesystem is now fully functional for basic operations.
 
 ### Memory Layout
 
-| Section | Physical | Virtual |
+| Region | Physical | Virtual |
 | :--- | :--- | :--- |
-| Multiboot header | `0x00200000` | `0x00200000` |
-| Bootstrap (.boot) | `0x00201000` | `0x00201000` |
-| Kernel (.text/.rodata/.data/.bss) | `0x00202000+` | `0xC0202000+` |
-| Stack | (in .bss) | higher half, 16 KB |
+| Boot code + multiboot header | `0x00200000` | `0x00200000` |
+| Kernel text/rodata/data/bss | `0x00202000+` | `0xC0202000+` |
+| Identity map (first 4MB) | `0x00000000` | `0x00000000` |
+| Stack | in .bss | higher half, 16 KB |
+| Heap | dynamic | managed by kmalloc |
+
 ### Compilation Flags
 
 | Flag | Purpose |
 | :--- | :--- |
 | `-ffreestanding` | Build without the standard library |
 | `-nostdlib` | Prevent linking standard C startup files |
-| `-fno-stack-protector` | Disable stack smashing protection |
+| `-O2` | Optimisation level 2 |
 
 ---
 
@@ -107,27 +117,27 @@ cd GordOS
 
 ### 3. Set Up the Cross-Compiler
 
+Follow the [OSDev cross-compiler guide](https://wiki.osdev.org/GCC_Cross-Compiler), then add to your `~/.bashrc`:
+
 ```bash
 export PREFIX="$HOME/opt/cross"
 export TARGET=i686-elf
 export PATH="$PREFIX/bin:$PATH"
-export PATH="$HOME/opt/cross/bin:$PATH"
 ```
 
 Verify the compiler is ready:
 
 ```bash
-$TARGET-gcc --version
+i686-elf-gcc --version
 # Expected output: i686-elf-gcc (GCC) x.x.x
 ```
 
 ### 4. Build and Create the ISO
 
-
 ```bash
 make        # Compile and link everything
 make iso    # Create the bootable ISO
-make disk   # Creates FAT32 disk.img for GordOS on QEMU
+make disk   # Create a fresh FAT32 disk.img for QEMU
 make clean  # Remove all build artifacts
 ```
 
@@ -137,30 +147,19 @@ make clean  # Remove all build artifacts
 
 ### QEMU (recommended)
 
-Create a FAT32 disk image:
-
 ```bash
-qemu-img create -f raw disk.img 64M
-mkfs.fat -F 32 disk.img
-
-OR
-
-make disk
+make disk   # Only needed once, or after make clean
+make iso
+make run
 ```
 
-To put files on the disk from Linux:
+To put files on the disk from Linux before booting:
 
 ```bash
-echo "Hello from GordOS!" > test.txt
 mcopy -i disk.img test.txt ::TEST.TXT
 ```
-You can also use GordOS's built in commands now
 
-Then boot:
-
-```bash
-qemu-system-i386 -cdrom GordOS.iso -drive file=disk.img,format=raw -boot d
-```
+You can also create and write files from within GordOS using the built-in shell commands.
 
 ### Other Options
 
@@ -168,20 +167,24 @@ qemu-system-i386 -cdrom GordOS.iso -drive file=disk.img,format=raw -boot d
 - **Hard disk** — `dd` the ISO to a disk
 - **Optical media** — burn the ISO to a DVD or CD
 
-### To Use Real x86 Hardware
+### Real x86 Hardware
 
-- **Make ISO and use DD for a USB** - Have not tested using a DVD or DD'ing to the Hard Disk itself
-- **Format Hard drive with FAT32** - Either a partition or the whole drive
-- **Boot from USB** - It should be as simple as that.
+- Build the ISO and `dd` it to a USB drive
+- Format a hard drive or partition as FAT32 for filesystem support
+- Boot from USB — should work out of the box on any BIOS/legacy boot system
 
-## Notes With Real Hardware
-- **Less stable** - Real hardware, while not the hardest thing to test with, it isnt the most ideal, so things may work on QEMU way before it gets fixed for real hardware
-- **USB should not be removed** - It probably could be, but its safer not to
-- **Data Loss** - You need to have a Hard Disk with either a FAT32 partition. Making the FAT32 partition could cause data loss
-> **I AM NOT RESPONSABLE FOR ANY DATA LOSS THAT MAY OCCOUR, YOU HAVE BEEN WARNED**
+## Notes on Real Hardware
+
+- **Less stable** — things may work in QEMU before they're fixed for real hardware
+- **Don't remove the USB while running**
+- **Data loss risk** — formatting a partition as FAT32 will erase its contents
+
+> **I AM NOT RESPONSIBLE FOR ANY DATA LOSS. YOU HAVE BEEN WARNED.**
+
 ---
 
 ## Known Issues
 
-- 16KB stack, fine for now but will need addressing in the future
-- Filenames must be uppercase 8.3 format (e.g. `TEST.TXT`) due to FAT32 limitations, however, you can enter the filename in lowercase
+- 16KB stack — fine for now, will need addressing before user mode
+- Filenames must be 8.3 uppercase format (e.g. `TEST.TXT`) — input can be lowercase
+- No subdirectory support in `cat`, `write`, `rm`, `rename` — all commands operate on the current working directory only
