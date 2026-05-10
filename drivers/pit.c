@@ -1,6 +1,7 @@
 #include "pit.h"
 #include "pic.h"
 #include "idt.h"
+#include "scheduler.h"
 
 #define PIT_CHANNEL0	0x40
 #define PIT_COMMAND	0x43
@@ -13,6 +14,7 @@ static void pit_handler(struct registers regs)
 {
 	(void)regs;
 	ticks++;
+	scheduler_tick();
 }
 
 void pit_init(uint32_t frequency)

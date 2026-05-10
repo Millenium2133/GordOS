@@ -9,13 +9,19 @@ CFLAGS = -std=gnu99 -ffreestanding -O2 -Wall -Wextra \
 OBJS = boot.o kernel.o gdt.o gdt_flush.o idt.o idt_flush.o \
        isr.o pic.o keyboard.o splash.o string.o vga.o shell.o pmm.o \
 	kmalloc.o ata.o fat32.o paging.o pit.o rtc.o syscall.o \
-	usermode.o
+	usermode.o process.o elf.o scheduler.o scheduler_asm.o
 
 GordOS: $(OBJS) boot/linker.ld
 	$(LD) -T boot/linker.ld -o GordOS -ffreestanding -O2 -nostdlib $(OBJS) -lgcc
 
 boot.o: boot/boot.s
 	$(AS) boot/boot.s -o boot.o
+
+scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/process.h memory/paging.h
+	$(CC) $(CFLAGS) -c kernel/scheduler.c -o scheduler.o
+
+scheduler_asm.o: kernel/scheduler.s
+	$(AS) kernel/scheduler.s -o scheduler_asm.o
 
 pit.o: drivers/pit.c drivers/pit.h drivers/pic.h cpu/idt.h
 	$(CC) $(CFLAGS) -c drivers/pit.c -o pit.o
@@ -40,6 +46,12 @@ fat32.o: fs/fat32.c fs/fat32.h drivers/ata.h memory/kmalloc.h
 
 shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h drivers/rtc.h
 	$(CC) $(CFLAGS) -c kernel/shell.c -o shell.o
+
+process.o: kernel/process.c kernel/process.h memory/paging.h memory/kmalloc.h
+	$(CC) $(CFLAGS) -c kernel/process.c -o process.o
+
+elf.o: kernel/elf.c kernel/elf.h kernel/process.h memory/paging.h memory/pmm.h
+	$(CC) $(CFLAGS) -c kernel/elf.c -o elf.o
 
 usermode.o: kernel/usermode.c kernel/usermode.h cpu/idt.h
 	$(CC) $(CFLAGS) -c kernel/usermode.c -o usermode.o
