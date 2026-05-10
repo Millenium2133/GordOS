@@ -21,7 +21,7 @@ int fat32_delete_file(const char* path);
 int fat32_rename_file(const char* oldpath, const char* newpath);
 int fat32_mkdir(const char* name);
 int fat32_cd(const char* name);
-int fat32_find_prefix(const char* prefix, char matches[][13], int max_matches);
+int fat32_find_prefix(const char* prefix, char matches[][64], int max_matches);
 
 uint32_t fat32_get_cwd_cluster(void);
 const char* fat32_get_cwd_path(void);

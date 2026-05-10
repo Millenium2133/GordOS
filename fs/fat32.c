@@ -19,20 +19,20 @@ static uint32_t root_cluster;
 static uint32_t fat_start;
 static uint32_t data_start;
 
-// Helper to read a uint16 from a byte array at offset
-static uint16_t read16(uint8_t* buf, int offset)
-{
-	return (uint16_t)(buf[offset] | (buf[offset + 1] << 8));
-}
-
 // Current working directory
 static uint32_t cwd_cluster;
 static char cwd_path[256];
 
+// Helper to read a uint16 from a byte array at offset
+static uint16_t read16(uint8_t* buf, int offset)
+{
+    return (uint16_t)(buf[offset] | (buf[offset + 1] << 8));
+}
+
 // Helper to read a uint32 from a byte array at offset
 static uint32_t read32(uint8_t* buf, int offset)
 {
-    return (uint32_t)(buf[offset]        |
+    return (uint32_t)(buf[offset]       |
            (buf[offset + 1] << 8)  |
            (buf[offset + 2] << 16) |
            (buf[offset + 3] << 24));
@@ -47,7 +47,7 @@ static char to_upper(char c)
 }
 
 // Forward declarations
-static int fat32_create_entry(const char* name, uint32_t cluster, uint32_t size);
+static int fat32_create_entry(const char* name, uint32_t dir_cluster, uint32_t cluster, uint32_t size);
 static int read_cluster(uint32_t cluster, uint8_t* buffer);
 
 // Convert cluster number to LBA address
@@ -141,12 +141,124 @@ static int write_cluster(uint32_t cluster, uint8_t* buffer)
     return ata_write(lba, sectors_per_cluster, buffer);
 }
 
+// Resolve a path to a (dir_cluster, filename) pair.
+// Absolute paths (starting with /) start from root_cluster.
+// Relative paths start from cwd_cluster.
+// On success: *dir_cluster is the cluster of the parent directory,
+//             *filename points into the original path at the last component.
+// Returns 0 on success, -1 if any directory component doesn't exist.
+static int fat32_resolve_path(const char* path, uint32_t* dir_cluster, const char** filename)
+{
+    if (!path || !dir_cluster || !filename)
+        return -1;
+
+    uint32_t cluster = (path[0] == '/') ? root_cluster : cwd_cluster;
+    if (path[0] == '/')
+        path++;
+
+    *dir_cluster = cluster;
+    *filename = path;
+
+    while (1)
+    {
+        int i = 0;
+        while (path[i] && path[i] != '/')
+            i++;
+
+        if (path[i] == '\0')
+        {
+            *dir_cluster = cluster;
+            *filename = path;
+            return 0;
+        }
+
+        // Extract this directory component
+        char component[13];
+        int k;
+        for (k = 0; k < i && k < 12; k++)
+            component[k] = path[k];
+        component[k] = '\0';
+
+        // Search for this component in the current cluster
+        uint8_t* buf = kmalloc(sectors_per_cluster * 512);
+        if (!buf)
+            return -1;
+
+        uint32_t scan = cluster;
+        uint32_t found = 0;
+        int matched = 0;
+
+        while (scan >= 2 && scan < FAT32_EOC)
+        {
+            if (read_cluster(scan, buf) != 0)
+                break;
+
+            uint32_t entries = (sectors_per_cluster * 512) / 32;
+            uint32_t ei;
+
+            for (ei = 0; ei < entries; ei++)
+            {
+                uint8_t* e = buf + (ei * 32);
+
+                if (e[0] == 0x00)
+                    goto not_found;
+
+                if ((uint8_t)e[0] == 0xE5)
+                    continue;
+
+                uint8_t attr = e[11];
+                if (!(attr & FAT_ATTR_DIRECTORY))
+                    continue;
+                if (attr == 0x0F)
+                    continue;
+
+                char dname[13];
+                int n = 0, j;
+                for (j = 0; j < 8 && e[j] != ' '; j++)
+                    dname[n++] = e[j];
+                dname[n] = '\0';
+
+                int match = 1;
+                for (j = 0; dname[j] || component[j]; j++)
+                {
+                    if (to_upper(dname[j]) != to_upper(component[j]))
+                    {
+                        match = 0;
+                        break;
+                    }
+                }
+
+                if (match)
+                {
+                    found = ((uint32_t)read16(e, 20) << 16) | read16(e, 26);
+                    if (found == 0)
+                        found = root_cluster;
+                    matched = 1;
+                    goto found_component;
+                }
+            }
+
+            scan = fat_next_cluster(scan);
+        }
+
+not_found:
+        kfree(buf);
+        return -1;
+
+found_component:
+        kfree(buf);
+        if (!matched)
+            return -1;
+        cluster = found;
+        path += i + 1;
+    }
+}
+
 int fat32_init(void)
 {
     if (ata_read(0, 1, boot_sector) != 0)
         return -1;
 
-    // Read BPB fields directly by byte offset
     bytes_per_sector    = read16(boot_sector, 11);
     sectors_per_cluster = boot_sector[13];
     reserved_sectors    = read16(boot_sector, 14);
@@ -155,7 +267,6 @@ int fat32_init(void)
     fat_size            = read32(boot_sector, 36);
     root_cluster        = read32(boot_sector, 44);
 
-    // Validate
     if (bytes_per_sector != 512)
         return -1;
     if (sectors_per_cluster == 0)
@@ -163,26 +274,249 @@ int fat32_init(void)
     if (fat_count == 0)
         return -1;
 
-    // Calculate region locations
     fat_start  = reserved_sectors;
     data_start = fat_start + (fat_count * fat_size);
 
-	// Start in root directory
-	cwd_cluster = root_cluster;
-	cwd_path[0] = '/';
-	cwd_path[1] = '\0';
+    cwd_cluster = root_cluster;
+    cwd_path[0] = '/';
+    cwd_path[1] = '\0';
 
     return 0;
 }
 
 int fat32_list_dir(const char* path)
 {
-    (void)path;
+    uint32_t cluster;
 
-    uint32_t cluster = cwd_cluster;
+    if (!path || path[0] == '\0' || (path[0] == '/' && path[1] == '\0'))
+    {
+        cluster = cwd_cluster;
+    }
+    else
+    {
+        const char* dirname;
+        uint32_t parent;
+        if (fat32_resolve_path(path, &parent, &dirname) != 0)
+            return -1;
+
+        uint8_t* buf = kmalloc(sectors_per_cluster * 512);
+        if (!buf)
+            return -1;
+
+        uint32_t scan = parent;
+        cluster = 0;
+
+        while (scan >= 2 && scan < FAT32_EOC)
+        {
+            if (read_cluster(scan, buf) != 0)
+                break;
+
+            uint32_t entries = (sectors_per_cluster * 512) / 32;
+            uint32_t i;
+            for (i = 0; i < entries; i++)
+            {
+                uint8_t* e = buf + (i * 32);
+                if (e[0] == 0x00) { kfree(buf); return -1; }
+                if ((uint8_t)e[0] == 0xE5) continue;
+                uint8_t attr = e[11];
+                if (!(attr & FAT_ATTR_DIRECTORY)) continue;
+                if (attr == 0x0F) continue;
+
+                char dname[13];
+                int n = 0, j;
+                for (j = 0; j < 8 && e[j] != ' '; j++)
+                    dname[n++] = e[j];
+                dname[n] = '\0';
+
+                int match = 1;
+                for (j = 0; dname[j] || dirname[j]; j++)
+                {
+                    if (to_upper(dname[j]) != to_upper(dirname[j])) { match = 0; break; }
+                }
+                if (match)
+                {
+                    cluster = ((uint32_t)read16(e, 20) << 16) | read16(e, 26);
+                    if (cluster == 0) cluster = root_cluster;
+                    goto ls_found;
+                }
+            }
+            scan = fat_next_cluster(scan);
+        }
+        kfree(buf);
+        return -1;
+
+ls_found:
+        kfree(buf);
+    }
+
     uint8_t* buf = kmalloc(sectors_per_cluster * 512);
     if (!buf)
         return -1;
+
+    while (cluster >= 2 && cluster < FAT32_EOC)
+    {
+        if (read_cluster(cluster, buf) != 0)
+            break;
+
+        uint32_t entries = (sectors_per_cluster * 512) / 32;
+        uint32_t i;
+
+        for (i = 0; i < entries; i++)
+        {
+            uint8_t* e = buf + (i * 32);
+
+            if (e[0] == 0x00)
+                goto ls_done;
+
+            if ((uint8_t)e[0] == 0xE5)
+                continue;
+
+            uint8_t attr = e[11];
+            if (attr == 0x0F || attr == 0x08)
+                continue;
+
+            char name[13];
+            int n = 0, j;
+
+            for (j = 0; j < 8 && e[j] != ' '; j++)
+                name[n++] = e[j];
+            if (e[8] != ' ')
+            {
+                name[n++] = '.';
+                for (j = 8; j < 11 && e[j] != ' '; j++)
+                    name[n++] = e[j];
+            }
+            name[n] = '\0';
+
+            terminal_writestring(name);
+            if (attr & FAT_ATTR_DIRECTORY)
+                terminal_writestring("/");
+            terminal_putchar('\n');
+        }
+
+        cluster = fat_next_cluster(cluster);
+    }
+
+ls_done:
+    kfree(buf);
+    return 0;
+}
+
+int fat32_find_prefix(const char* prefix, char matches[][64], int max_matches)
+{
+    if (!prefix || !matches)
+        return 0;
+    const char* name_prefix = prefix;
+    int last_slash = -1;
+    int pi = 0;
+    while (prefix[pi])
+    {
+        if (prefix[pi] == '/') last_slash = pi;
+        pi++;
+    }
+
+    uint32_t scan_cluster;
+    char dir_part[256];
+    int dir_part_len = 0;
+
+    if (last_slash >= 0)
+    {
+        // There's a slash, resolve the directory portion
+        int k;
+        for (k = 0; k <= last_slash && k < 255; k++)
+            dir_part[k] = prefix[k];
+        dir_part[k] = '\0';
+        dir_part_len = k;
+        name_prefix = prefix + last_slash + 1;
+
+		// Strip trailing slash for resolution
+        char resolve_path[256];
+        int rp = 0;
+        while (dir_part[rp] && rp < 254) { resolve_path[rp] = dir_part[rp]; rp++; }
+        if (rp > 0 && resolve_path[rp - 1] == '/') rp--;
+        resolve_path[rp] = '\0';
+
+        uint32_t parent;
+        const char* dirname;
+        if (fat32_resolve_path(resolve_path, &parent, &dirname) != 0)
+            return 0;
+
+		 if (dirname[0] == '\0')
+        {
+            scan_cluster = parent;
+            goto prefix_dir_found;
+        }
+
+        // dirname is the last component of dir_part, find its cluster
+        uint8_t* buf = kmalloc(sectors_per_cluster * 512);
+        if (!buf)
+            return 0;
+
+        uint32_t scan = parent;
+        scan_cluster = 0;
+
+        while (scan >= 2 && scan < FAT32_EOC)
+        {
+            if (read_cluster(scan, buf) != 0)
+                break;
+
+            uint32_t entries = (sectors_per_cluster * 512) / 32;
+            uint32_t i;
+            for (i = 0; i < entries; i++)
+            {
+                uint8_t* e = buf + (i * 32);
+                if (e[0] == 0x00) goto prefix_dir_done;
+                if ((uint8_t)e[0] == 0xE5) continue;
+                uint8_t attr = e[11];
+                if (!(attr & FAT_ATTR_DIRECTORY)) continue;
+                if (attr == 0x0F) continue;
+
+                char dname[13];
+                int n = 0, j;
+                for (j = 0; j < 8 && e[j] != ' '; j++)
+                    dname[n++] = e[j];
+                dname[n] = '\0';
+
+                int match = 1;
+                for (j = 0; dname[j] || dirname[j]; j++)
+                {
+                    if (to_upper(dname[j]) != to_upper(dirname[j])) { match = 0; break; }
+                }
+                if (match)
+                {
+                    scan_cluster = ((uint32_t)read16(e, 20) << 16) | read16(e, 26);
+                    if (scan_cluster == 0) scan_cluster = root_cluster;
+                    kfree(buf);
+                    goto prefix_dir_found;
+                }
+            }
+            scan = fat_next_cluster(scan);
+        }
+
+prefix_dir_done:
+        kfree(buf);
+        return 0;
+
+prefix_dir_found:;
+    }
+    else
+    {
+        // No slash, scan cwd
+        scan_cluster = cwd_cluster;
+        dir_part[0] = '\0';
+        dir_part_len = 0;
+    }
+
+    int name_prefix_len = 0;
+    while (name_prefix[name_prefix_len])
+        name_prefix_len++;
+
+    uint8_t* buf = kmalloc(sectors_per_cluster * 512);
+    if (!buf)
+        return 0;
+
+    int count = 0;
+    uint32_t cluster = scan_cluster;
 
     while (cluster >= 2 && cluster < FAT32_EOC)
     {
@@ -206,14 +540,11 @@ int fat32_list_dir(const char* path)
             if (attr == 0x0F || attr == 0x08)
                 continue;
 
-            // Build 8.3 filename
             char name[13];
-            int n = 0;
-            int j;
+            int n = 0, j;
 
             for (j = 0; j < 8 && e[j] != ' '; j++)
                 name[n++] = e[j];
-
             if (e[8] != ' ')
             {
                 name[n++] = '.';
@@ -222,10 +553,36 @@ int fat32_list_dir(const char* path)
             }
             name[n] = '\0';
 
-            terminal_writestring(name);
-            if (attr & FAT_ATTR_DIRECTORY)
-                terminal_writestring("/");
-            terminal_putchar('\n');
+            // Skip dot entries
+            if (name[0] == '.')
+                continue;
+
+            // Check if name starts with name_prefix
+            int match = 1;
+
+            // Check if name starts with name_prefix
+            int match2 = 1;
+            for (j = 0; j < name_prefix_len; j++)
+            {
+                if (to_upper(name[j]) != to_upper(name_prefix[j]))
+                {
+                    match2 = 0;
+                    break;
+                }
+            }
+
+            if (match2 && count < max_matches)
+            {
+                // Build the full match including the directory part
+                int mi = 0;
+                int k;
+                for (k = 0; k < dir_part_len && mi < 12; k++)
+                    matches[count][mi++] = dir_part[k];
+                for (k = 0; name[k] && mi < 12; k++)
+                    matches[count][mi++] = name[k];
+                matches[count][mi] = '\0';
+                count++;
+            }
         }
 
         cluster = fat_next_cluster(cluster);
@@ -233,88 +590,7 @@ int fat32_list_dir(const char* path)
 
 done:
     kfree(buf);
-    return 0;
-}
-
-int fat32_find_prefix(const char* prefix, char matches[][13], int max_matches)
-{
-	if (!prefix || !matches)
-		return 0;
-
-	uint32_t cluster = cwd_cluster;
-	uint8_t* buf = kmalloc(sectors_per_cluster * 512);
-	if (!buf)
-		return 0;
-
-	int count = 0;
-	int prefix_len = 0;
-	while (prefix[prefix_len])
-		prefix_len++;
-
-	while (cluster >= 2 && cluster < FAT32_EOC)
-	{
-		if (read_cluster(cluster, buf) != 0)
-			break;
-
-		uint32_t entries = (sectors_per_cluster * 512) / 32;
-		uint32_t i;
-
-		for (i = 0; i < entries; i++)
-		{
-			uint8_t* e = buf + (i * 32);
-
-			if (e[0] == 0x00)
-				goto done;
-
-			if ((uint8_t)e[0] == 0xE5)
-				continue;
-
-			uint8_t attr = e[11];
-			if (attr == 0x0F || attr == 0x08)
-				continue;
-
-			// Buint 8.3 filename
-			char name[13];
-			int n = 0;
-			int j;
-
-			for (j = 0; j < 8 && e[j] != ' '; j++)
-				name[n++] = e[j];
-			if (e[8] != ' ')
-			{
-				name[n++] = '.';
-				for (j = 8; j < 11 && e[j] != ' '; j++)
-					name[n++] = e[j];
-			}
-			name[n] = '\0';
-
-			// Check if name starts with prefix (case insensitive)
-			int match = 1;
-			for (j = 0; j < prefix_len; j++)
-			{
-				if (to_upper(name[j]) != to_upper(prefix[j]))
-				{
-					match = 0;
-					break;
-				}
-			}
-
-			if (match && count < max_matches)
-			{
-				// Copyname into matches array
-				for (j = 0; name[j] && j < 12; j++)
-					matches[count][j] = name[j];
-				matches[count][j] = '\0';
-				count++;
-			}
-		}
-
-		cluster = fat_next_cluster(cluster);
-	}
-
-done:
-	kfree(buf);
-	return count;
+    return count;
 }
 
 int fat32_read_file(const char* path, void* buffer, uint32_t* size)
@@ -322,7 +598,12 @@ int fat32_read_file(const char* path, void* buffer, uint32_t* size)
     if (!path || !buffer || !size)
         return -1;
 
-    uint32_t cluster = cwd_cluster;
+    uint32_t cluster;
+    const char* filename;
+    if (fat32_resolve_path(path, &cluster, &filename) != 0)
+        return -1;
+    path = filename;
+
     uint8_t* buf = kmalloc(sectors_per_cluster * 512);
     if (!buf)
         return -1;
@@ -352,14 +633,11 @@ int fat32_read_file(const char* path, void* buffer, uint32_t* size)
             uint8_t attr = e[11];
             if (attr == 0x0F || attr == 0x08)
                 continue;
-
             if (attr & FAT_ATTR_DIRECTORY)
                 continue;
 
-            // Build 8.3 filename
             char name[13];
-            int n = 0;
-            int j;
+            int n = 0, j;
 
             for (j = 0; j < 8 && e[j] != ' '; j++)
                 name[n++] = e[j];
@@ -371,7 +649,6 @@ int fat32_read_file(const char* path, void* buffer, uint32_t* size)
             }
             name[n] = '\0';
 
-            // Case insensitive compare
             int match = 1;
             for (j = 0; name[j] || path[j]; j++)
             {
@@ -432,15 +709,21 @@ int fat32_write_file(const char* path, const void* buffer, uint32_t size)
     if (!path || !buffer)
         return -1;
 
-    // Check if file already exists and remove it first
-    uint32_t dir_cluster = cwd_cluster;
+    uint32_t dir_cluster;
+    const char* filename;
+    if (fat32_resolve_path(path, &dir_cluster, &filename) != 0)
+        return -1;
+    path = filename;
+
     uint8_t* scan_buf = kmalloc(sectors_per_cluster * 512);
     if (!scan_buf)
         return -1;
 
-    while (dir_cluster >= 2 && dir_cluster < FAT32_EOC)
+    uint32_t scan_cluster = dir_cluster;
+
+    while (scan_cluster >= 2 && scan_cluster < FAT32_EOC)
     {
-        if (read_cluster(dir_cluster, scan_buf) != 0)
+        if (read_cluster(scan_cluster, scan_buf) != 0)
             break;
 
         uint32_t entries = (sectors_per_cluster * 512) / 32;
@@ -459,14 +742,11 @@ int fat32_write_file(const char* path, const void* buffer, uint32_t size)
             uint8_t attr = e[11];
             if (attr == 0x0F || attr == 0x08)
                 continue;
-
             if (attr & FAT_ATTR_DIRECTORY)
                 continue;
 
-            // Build filename to compare
             char name[13];
-            int n = 0;
-            int j;
+            int n = 0, j;
             for (j = 0; j < 8 && e[j] != ' '; j++)
                 name[n++] = e[j];
             if (e[8] != ' ')
@@ -477,7 +757,6 @@ int fat32_write_file(const char* path, const void* buffer, uint32_t size)
             }
             name[n] = '\0';
 
-            // Case insensitive compare
             int match = 1;
             for (j = 0; name[j] || path[j]; j++)
             {
@@ -486,27 +765,23 @@ int fat32_write_file(const char* path, const void* buffer, uint32_t size)
 
             if (match)
             {
-                // Free existing cluster chain
                 uint32_t old_cluster = ((uint32_t)read16(e, 20) << 16) | read16(e, 26);
                 if (old_cluster >= 2)
                     fat_free_chain(old_cluster);
-
-                // Mark entry as deleted
                 e[0] = 0xE5;
-                write_cluster(dir_cluster, scan_buf);
+                write_cluster(scan_cluster, scan_buf);
                 goto scan_done;
             }
         }
 
-        dir_cluster = fat_next_cluster(dir_cluster);
+        scan_cluster = fat_next_cluster(scan_cluster);
     }
 
 scan_done:
     kfree(scan_buf);
 
-    // Handle empty file
     if (size == 0)
-        return fat32_create_entry(path, 0, 0);
+        return fat32_create_entry(path, dir_cluster, 0, 0);
 
     uint8_t* buf = kmalloc(sectors_per_cluster * 512);
     if (!buf)
@@ -552,424 +827,429 @@ scan_done:
     }
 
     kfree(buf);
-    return fat32_create_entry(path, first_cluster, size);
+    return fat32_create_entry(path, dir_cluster, first_cluster, size);
 }
 
 int fat32_delete_file(const char* path)
 {
-	if (!path)
-		return -1;
+    if (!path)
+        return -1;
 
-	uint32_t dir_cluster = cwd_cluster;
-	uint8_t* buf = kmalloc(sectors_per_cluster * 512);
-	if (!buf)
-		return -1;
+    uint32_t dir_cluster;
+    const char* filename;
+    if (fat32_resolve_path(path, &dir_cluster, &filename) != 0)
+        return -1;
+    path = filename;
 
-	while (dir_cluster >= 2 && dir_cluster < FAT32_EOC)
-	{
-		if (read_cluster(dir_cluster, buf) != 0)
-			break;
+    uint8_t* buf = kmalloc(sectors_per_cluster * 512);
+    if (!buf)
+        return -1;
 
-		uint32_t entries = (sectors_per_cluster * 512) / 32;
-		uint32_t i;
+    while (dir_cluster >= 2 && dir_cluster < FAT32_EOC)
+    {
+        if (read_cluster(dir_cluster, buf) != 0)
+            break;
 
-		for (i = 0; i < entries; i++)
-		{
-			uint8_t* e = buf + (i * 32);
+        uint32_t entries = (sectors_per_cluster * 512) / 32;
+        uint32_t i;
 
-			if (e[0] == 0x00)
-				goto not_found;
+        for (i = 0; i < entries; i++)
+        {
+            uint8_t* e = buf + (i * 32);
 
-			if ((uint8_t)e[0] == 0xE5)
-				continue;
+            if (e[0] == 0x00)
+                goto not_found;
 
-			uint8_t attr = e[11];
-			if (attr == 0x0F || attr == 0x08)
-				continue;
+            if ((uint8_t)e[0] == 0xE5)
+                continue;
 
-			if (attr & FAT_ATTR_DIRECTORY)
-				continue;
+            uint8_t attr = e[11];
+            if (attr == 0x0F || attr == 0x08)
+                continue;
+            if (attr & FAT_ATTR_DIRECTORY)
+                continue;
 
-			// Build filename
-			char name[13];
-			int n = 0;
-			int j;
-			for (j = 0; j < 8 && e[j] != ' '; j++)
-				name[n++] = e[j];
-			if (e[8] != ' ')
-			{
-				name[n++] = '.';
-				for (j = 8; j < 11 && e[j] != ' '; j++)
-					name[n++] =e[j];
-			}
-			name[n] = '\0';
+            char name[13];
+            int n = 0, j;
+            for (j = 0; j < 8 && e[j] != ' '; j++)
+                name[n++] = e[j];
+            if (e[8] != ' ')
+            {
+                name[n++] = '.';
+                for (j = 8; j < 11 && e[j] != ' '; j++)
+                    name[n++] = e[j];
+            }
+            name[n] = '\0';
 
-			// case insensitive compare
-			int match = 1;
-			for (j = 0; name[j] || path[j]; j++)
-			{
-				if (to_upper(name[j]) != to_upper(path[j])) { match = 0; break; }
-			}
+            int match = 1;
+            for (j = 0; name[j] || path[j]; j++)
+            {
+                if (to_upper(name[j]) != to_upper(path[j])) { match = 0; break; }
+            }
 
-			if (match)
-			{
-				// Free cluster chain
-				uint32_t file_cluster = ((uint32_t)read16(e, 20) << 16) | read16(e, 26);
-				if (file_cluster >= 2)
-					fat_free_chain(file_cluster);
+            if (match)
+            {
+                uint32_t file_cluster = ((uint32_t)read16(e, 20) << 16) | read16(e, 26);
+                if (file_cluster >= 2)
+                    fat_free_chain(file_cluster);
+                e[0] = 0xE5;
+                write_cluster(dir_cluster, buf);
+                kfree(buf);
+                return 0;
+            }
+        }
 
-				// Mark as deleted
-				e[0] = 0xE5;
-				write_cluster(dir_cluster, buf);
-				kfree(buf);
-				return 0;
-			}
-		}
-
-		dir_cluster = fat_next_cluster(dir_cluster);
-
-	}
+        dir_cluster = fat_next_cluster(dir_cluster);
+    }
 
 not_found:
-	kfree(buf);
-	return -1;
-
+    kfree(buf);
+    return -1;
 }
 
 int fat32_rename_file(const char* oldpath, const char* newpath)
 {
-	if (!oldpath || !newpath)
-		return -1;
+    if (!oldpath || !newpath)
+        return -1;
 
-	uint32_t dir_cluster = cwd_cluster;
-	uint8_t* buf = kmalloc(sectors_per_cluster * 512);
-	if (!buf)
-		return -1;
+    uint32_t dir_cluster;
+    const char* filename;
+    if (fat32_resolve_path(oldpath, &dir_cluster, &filename) != 0)
+        return -1;
+    oldpath = filename;
 
-	while (dir_cluster >= 2 && dir_cluster < FAT32_EOC)
-	{
-		if (read_cluster(dir_cluster, buf) != 0)
-			break;
-		uint32_t entries = (sectors_per_cluster * 512) / 32;
-		uint32_t i;
+    uint8_t* buf = kmalloc(sectors_per_cluster * 512);
+    if (!buf)
+        return -1;
 
-		for (i = 0; i < entries; i++)
-		{
-			uint8_t* e = buf + (i * 32);
+    while (dir_cluster >= 2 && dir_cluster < FAT32_EOC)
+    {
+        if (read_cluster(dir_cluster, buf) != 0)
+            break;
 
-			if (e[0] == 0x00)
-				goto not_found;
+        uint32_t entries = (sectors_per_cluster * 512) / 32;
+        uint32_t i;
 
-			if ((uint8_t)e[0] == 0xE5)
-				continue;
+        for (i = 0; i < entries; i++)
+        {
+            uint8_t* e = buf + (i * 32);
 
-			uint8_t attr = e[11];
-			if (attr == 0x0F || attr == 0x08)
-				continue;
+            if (e[0] == 0x00)
+                goto not_found;
 
-			// Build the filename
-			char name[13];
-			int n = 0;
-			int j;
-			for (j = 0; j < 8 &&  e[j] != ' '; j++)
-				name[n++] = e[j];
-			if (e[8] != ' ')
-			{
-				name[n++] = '.';
-				for (j = 8; j < 11 && e[j] != ' '; j++)
-					name[n++] = e[j];
-			}
-			name[n] = '\0';
+            if ((uint8_t)e[0] == 0xE5)
+                continue;
 
-			// Case insensitive compare
-			int match = 1;
-			for (j = 0; name[j] || oldpath[j]; j++)
-			{
-				if (to_upper(name[j]) != to_upper(oldpath[j])) { match = 0; break; }
-			}
+            uint8_t attr = e[11];
+            if (attr == 0x0F || attr == 0x08)
+                continue;
 
-			if (match)
-			{
-				int ni = 0;
+            char name[13];
+            int n = 0, j;
+            for (j = 0; j < 8 && e[j] != ' '; j++)
+                name[n++] = e[j];
+            if (e[8] != ' ')
+            {
+                name[n++] = '.';
+                for (j = 8; j < 11 && e[j] != ' '; j++)
+                    name[n++] = e[j];
+            }
+            name[n] = '\0';
 
-				// Space pad name feild
-				for (j = 0; j < 11; j++)
-					e[j] = ' ';
+            int match = 1;
+            for (j = 0; name[j] || oldpath[j]; j++)
+            {
+                if (to_upper(name[j]) != to_upper(oldpath[j])) { match = 0; break; }
+            }
 
-				// Write new base name in uppercase
-				ni = 0;
-				j = 0;
-				while (newpath[ni] && newpath[ni] != '.' && j < 8)
-					e[j++] = to_upper(newpath[ni++]);
+            if (match)
+            {
+                int ni = 0;
 
-				if (newpath[ni] == '.')
-				{
-					ni++;
-					j = 8;
-					while (newpath[ni] && j < 11)
-						e[j++] = to_upper(newpath[ni++]);
-				}
+                for (j = 0; j < 11; j++)
+                    e[j] = ' ';
 
-				write_cluster(dir_cluster, buf);
-				kfree(buf);
-				return 0;
+                ni = 0;
+                j = 0;
+                while (newpath[ni] && newpath[ni] != '.' && j < 8)
+                    e[j++] = to_upper(newpath[ni++]);
 
-			}
+                if (newpath[ni] == '.')
+                {
+                    ni++;
+                    j = 8;
+                    while (newpath[ni] && j < 11)
+                        e[j++] = to_upper(newpath[ni++]);
+                }
 
-		}
+                write_cluster(dir_cluster, buf);
+                kfree(buf);
+                return 0;
+            }
+        }
 
-		dir_cluster = fat_next_cluster(dir_cluster);
+        dir_cluster = fat_next_cluster(dir_cluster);
+    }
 
-	}
 not_found:
-	kfree(buf);
-	return -1;
+    kfree(buf);
+    return -1;
 }
 
 int fat32_mkdir(const char* name)
 {
-	if (!name)
-		return -1;
+    if (!name)
+        return -1;
 
-	// Allocate a cluster for the new directory
-	uint32_t new_cluster = fat_alloc_cluster();
-	if (new_cluster == 0)
-		return -1;
+    uint32_t parent_cluster;
+    const char* dirname;
+    if (fat32_resolve_path(name, &parent_cluster, &dirname) != 0)
+        return -1;
+    name = dirname;
 
-	// Zero out the cluster
-	uint8_t* buf = kmalloc(sectors_per_cluster * 512);
-	if (!buf)
-		return -1;
+    uint32_t new_cluster = fat_alloc_cluster();
+    if (new_cluster == 0)
+        return -1;
 
-	uint32_t i;
-	for (i = 0; i < sectors_per_cluster * 512; i++)
-		buf[i] = 0;
+    uint8_t* buf = kmalloc(sectors_per_cluster * 512);
+    if (!buf)
+        return -1;
 
-	//Write '.' entry (points to itself)
-	uint8_t* dot = buf;
-	dot[0] = '.';
-	for (i = 1; i < 11; i++) dot[i] = ' ';
-	dot[11] = FAT_ATTR_DIRECTORY;
-	dot[20] = (uint8_t)((new_cluster >> 16) & 0xFF);
-	dot[21] = (uint8_t)((new_cluster >> 24) & 0xFF);
-	dot[26] = (uint8_t)(new_cluster & 0xFF);
-	dot[27] = (uint8_t)((new_cluster >> 8) & 0xFF);
+    uint32_t i;
+    for (i = 0; i < sectors_per_cluster * 512; i++)
+        buf[i] = 0;
 
-	// Wrie '..' entry (points to parent)
-	uint8_t* dotdot = buf + 32;
-	dotdot[0] = '.';
-	dotdot[1] = '.';
-	for (i = 2; i < 11; i++) dotdot[i] = ' ';
-	dotdot[11] = FAT_ATTR_DIRECTORY;
-	dotdot[20] = (uint8_t)((cwd_cluster >> 16) & 0xFF);
-	dotdot[21] = (uint8_t)((cwd_cluster >> 24) & 0xFF);
-	dotdot[26] = (uint8_t)(cwd_cluster & 0xFF);
-	dotdot[27] = (uint8_t)((cwd_cluster >> 8) & 0xFF);
+    // '.' entry points to itself
+    uint8_t* dot = buf;
+    dot[0] = '.';
+    for (i = 1; i < 11; i++) dot[i] = ' ';
+    dot[11] = FAT_ATTR_DIRECTORY;
+    dot[20] = (uint8_t)((new_cluster >> 16) & 0xFF);
+    dot[21] = (uint8_t)((new_cluster >> 24) & 0xFF);
+    dot[26] = (uint8_t)(new_cluster & 0xFF);
+    dot[27] = (uint8_t)((new_cluster >> 8) & 0xFF);
 
-	if (write_cluster(new_cluster, buf) != 0)
-	{
-		kfree(buf);
-		return -1;
-	}
+    // '..' entry points to parent
+    uint8_t* dotdot = buf + 32;
+    dotdot[0] = '.';
+    dotdot[1] = '.';
+    for (i = 2; i < 11; i++) dotdot[i] = ' ';
+    dotdot[11] = FAT_ATTR_DIRECTORY;
+    dotdot[20] = (uint8_t)((parent_cluster >> 16) & 0xFF);
+    dotdot[21] = (uint8_t)((parent_cluster >> 24) & 0xFF);
+    dotdot[26] = (uint8_t)(parent_cluster & 0xFF);
+    dotdot[27] = (uint8_t)((parent_cluster >> 8) & 0xFF);
 
-	kfree(buf);
+    if (write_cluster(new_cluster, buf) != 0)
+    {
+        kfree(buf);
+        return -1;
+    }
 
-	// Create directory entry in current directory
-	// Reuse create_entery but with directory attribute
-	uint32_t dir_cluster = cwd_cluster;
-	buf = kmalloc(sectors_per_cluster * 512);
-	if (!buf)
-		return -1;
+    kfree(buf);
 
-	while (dir_cluster >= 2 && dir_cluster < FAT32_EOC)
-	{
-		if (read_cluster(dir_cluster, buf) != 0)
-			break;
+    uint32_t dir_cluster = parent_cluster;
+    buf = kmalloc(sectors_per_cluster * 512);
+    if (!buf)
+        return -1;
 
-		uint32_t entries = (sectors_per_cluster * 512) / 32;
+    while (dir_cluster >= 2 && dir_cluster < FAT32_EOC)
+    {
+        if (read_cluster(dir_cluster, buf) != 0)
+            break;
 
-		for (i = 0; i < entries; i++)
-		{
-			uint8_t* e = buf + (i * 32);
+        uint32_t entries = (sectors_per_cluster * 512) / 32;
 
-			if (e[0] == 0x00 || (uint8_t)e[0] == 0XE5)
-			{
-				int ni, j;
+        for (i = 0; i < entries; i++)
+        {
+            uint8_t* e = buf + (i * 32);
 
-				for (j = 0; j < 32; j++)
-					e[j] = 0;
-				for (j = 0; j < 11; j++)
-					e[j] = ' ';
+            if (e[0] == 0x00 || (uint8_t)e[0] == 0xE5)
+            {
+                int ni, j;
 
-				ni = 0;
-				j = 0;
-				while (name[ni] && name[ni] != '.' && j < 8)
-					e[j++] = to_upper(name[ni++]);
+                for (j = 0; j < 32; j++)
+                    e[j] = 0;
+                for (j = 0; j < 11; j++)
+                    e[j] = ' ';
 
-				if (name[ni] == '.')
-				{
-					ni++;
-					j = 8;
-					while (name[ni] && j < 11)
-						e[j++] = to_upper(name[ni++]);
-				}
+                ni = 0;
+                j = 0;
+                while (name[ni] && name[ni] != '.' && j < 8)
+                    e[j++] = to_upper(name[ni++]);
 
-				e[11] = FAT_ATTR_DIRECTORY;
-				e[20] = (uint8_t)((new_cluster >> 16) & 0xFF);
-				e[21] = (uint8_t)((new_cluster >> 24) & 0xFF);
-				e[26] = (uint8_t)(new_cluster & 0xFF);
-				e[27] = (uint8_t)((new_cluster >> 8) & 0xFF);
+                if (name[ni] == '.')
+                {
+                    ni++;
+                    j = 8;
+                    while (name[ni] && j < 11)
+                        e[j++] = to_upper(name[ni++]);
+                }
 
-				if (write_cluster(dir_cluster, buf) != 0)
-				{
-					kfree(buf);
-					return -1;
-				}
+                e[11] = FAT_ATTR_DIRECTORY;
+                e[20] = (uint8_t)((new_cluster >> 16) & 0xFF);
+                e[21] = (uint8_t)((new_cluster >> 24) & 0xFF);
+                e[26] = (uint8_t)(new_cluster & 0xFF);
+                e[27] = (uint8_t)((new_cluster >> 8) & 0xFF);
 
-				kfree(buf);
-				return 0;
+                if (write_cluster(dir_cluster, buf) != 0)
+                {
+                    kfree(buf);
+                    return -1;
+                }
 
-			}
-		}
+                kfree(buf);
+                return 0;
+            }
+        }
 
-		dir_cluster = fat_next_cluster(dir_cluster);
+        dir_cluster = fat_next_cluster(dir_cluster);
+    }
 
-	}
-
-	kfree(buf);
-	return -1;
+    kfree(buf);
+    return -1;
 }
 
 int fat32_cd(const char* name)
 {
-	if (!name)
-		return -1;
+    if (!name)
+        return -1;
 
-	// Handle cd
-	if (name[0] == '.' && name[1] == '.' && name[2] == '\0')
-	{
-		// Read the current directory to find '..' entry
-		uint8_t* buf = kmalloc(sectors_per_cluster * 512);
-		if (!buf)
-			return -1;
+    // Handle cd ..
+    if (name[0] == '.' && name[1] == '.' && name[2] == '\0')
+    {
+        uint8_t* buf = kmalloc(sectors_per_cluster * 512);
+        if (!buf)
+            return -1;
 
-		if (read_cluster(cwd_cluster, buf) != 0)
-		{
-			kfree(buf);
-			return -1;
-		}
+        if (read_cluster(cwd_cluster, buf) != 0)
+        {
+            kfree(buf);
+            return -1;
+        }
 
-		// '..' is ALWAYS the second entry
-		uint8_t* dotdot = buf + 32;
-		uint32_t parent = ((uint32_t)read16(dotdot, 20) << 16) | read16(dotdot, 26);
+        uint8_t* dotdot = buf + 32;
+        uint32_t parent = ((uint32_t)read16(dotdot, 20) << 16) | read16(dotdot, 26);
+        kfree(buf);
 
-		kfree(buf);
+        if (parent == 0)
+            parent = root_cluster;
 
-		// if parent is 0, we are already in root
-		if (parent == 0)
-			parent = root_cluster;
+        cwd_cluster = parent;
 
-		cwd_cluster = parent;
+        int len = 0;
+        while (cwd_path[len]) len++;
+        if (len > 1)
+        {
+            len--;
+            while (len > 0 && cwd_path[len] != '/') len--;
+            if (len == 0) len = 1;
+            cwd_path[len] = '\0';
+        }
+        return 0;
+    }
 
-		// Update path. Remove last component
-		int len = 0;
-		while (cwd_path[len]) len++;
-		if (len > 1)
-		{
-			len--;
-			while (len > 0 && cwd_path[len] != '/') len--;
-			if (len == 0) len = 1;
-			cwd_path[len] = '\0';
-		}
-		return 0;
-	}
+    // Handle cd /
+    if (name[0] == '/' && name[1] == '\0')
+    {
+        cwd_cluster = root_cluster;
+        cwd_path[0] = '/';
+        cwd_path[1] = '\0';
+        return 0;
+    }
 
-	// Handle cd /
-	if (name[0] == '/' && name[1] == '\0')
-	{
-		cwd_cluster = root_cluster;
-		cwd_path[0] = '/';
-		cwd_path[1] = '\0';
-		return 0;
-	}
+    // Resolve path to get parent and final directory name
+    uint32_t parent;
+    const char* dirname;
+    if (fat32_resolve_path(name, &parent, &dirname) != 0)
+        return -1;
 
-	// Find the named directory in current directory
-	uint32_t dir_cluster = cwd_cluster;
-	uint8_t* buf = kmalloc(sectors_per_cluster * 512);
-	if (!buf)
-		return -1;
+    uint8_t* buf = kmalloc(sectors_per_cluster * 512);
+    if (!buf)
+        return -1;
 
-	while (dir_cluster >= 2 && dir_cluster < FAT32_EOC)
-	{
-		if (read_cluster(dir_cluster, buf) != 0)
-			break;
+    uint32_t scan = parent;
 
-		uint32_t entries = (sectors_per_cluster * 512) / 32;
-		uint32_t i;
+    while (scan >= 2 && scan < FAT32_EOC)
+    {
+        if (read_cluster(scan, buf) != 0)
+            break;
 
-		for (i = 0; i < entries; i++)
-		{
-			uint8_t* e = buf + (i * 32);
+        uint32_t entries = (sectors_per_cluster * 512) / 32;
+        uint32_t i;
 
-			if (e[0] == 0x00)
-				goto not_found;
+        for (i = 0; i < entries; i++)
+        {
+            uint8_t* e = buf + (i * 32);
 
-			if ((uint8_t)e[0] == 0xE5)
-				continue;
+            if (e[0] == 0x00)
+                goto not_found;
 
-			uint8_t attr = e[11];
-			if (!(attr & FAT_ATTR_DIRECTORY))
-				continue;
+            if ((uint8_t)e[0] == 0xE5)
+                continue;
 
-			if (attr == 0x0F)
-				continue;
+            uint8_t attr = e[11];
+            if (!(attr & FAT_ATTR_DIRECTORY))
+                continue;
+            if (attr == 0x0F)
+                continue;
 
-			// Build name
-			char dname[13];
-			int n = 0;
-			int j;
-			for (j = 0; j < 8 && e[j] != ' ';j++)
-				dname[n++] = e[j];
+            char dname[13];
+            int n = 0, j;
+            for (j = 0; j < 8 && e[j] != ' '; j++)
+                dname[n++] = e[j];
+            dname[n] = '\0';
 
-		dname[n] = '\0';
+            int match = 1;
+            for (j = 0; dname[j] || dirname[j]; j++)
+            {
+                if (to_upper(dname[j]) != to_upper(dirname[j])) { match = 0; break; }
+            }
 
-		// Case insensitive compare
-		int match = 1;
-		for (j = 0; dname[j] || name[j]; j++)
-		{
-			if (to_upper(dname[j]) != to_upper(name[j])) { match = 0; break; }
-		}
+            if (match)
+            {
+                uint32_t target = ((uint32_t)read16(e, 20) << 16) | read16(e, 26);
+                if (target == 0) target = root_cluster;
+                cwd_cluster = target;
 
-		if (match)
-		{
-			uint32_t target = ((uint32_t)read16(e, 20) << 16) | read16(e, 26);
-			cwd_cluster = target;
+                if (name[0] == '/')
+                {
+                    // Absolute path, rebuild cwd_path from the input
+                    int pi = 0;
+                    cwd_path[pi++] = '/';
+                    int ni = 1;
+                    while (name[ni] && pi < 255)
+                        cwd_path[pi++] = to_upper(name[ni++]);
+                    cwd_path[pi] = '\0';
+                }
+                else
+                {
+                    // Relative path, append to cwd_path
+                    int len = 0;
+                    while (cwd_path[len]) len++;
+                    if (len > 1)
+                        cwd_path[len++] = '/';
+                    int ni = 0;
+                    while (name[ni] && len < 255)
+                        cwd_path[len++] = to_upper(name[ni++]);
+                    cwd_path[len] = '\0';
+                }
 
-			// Update the path string
-			int len = 0;
-			while (cwd_path[len]) len++;
-			if (len > 1)
-				cwd_path[len++] = '/';
-			int ni = 0;
-			while (name[ni] && len < 255)
-				cwd_path[len++] = to_upper(name[ni++]);
-			cwd_path[len] = '\0';
+                kfree(buf);
+                return 0;
+            }
+        }
 
-			kfree(buf);
-			return 0;
-		}
-		}
+        scan = fat_next_cluster(scan);
+    }
 
-		dir_cluster = fat_next_cluster(dir_cluster);
-	}
 not_found:
-	kfree(buf);
-	return -1;
+    kfree(buf);
+    return -1;
 }
 
-static int fat32_create_entry(const char* name, uint32_t cluster, uint32_t size)
+static int fat32_create_entry(const char* name, uint32_t dir_cluster, uint32_t cluster, uint32_t size)
 {
-    uint32_t dir_cluster = cwd_cluster;
     uint8_t* buf = kmalloc(sectors_per_cluster * 512);
     if (!buf)
         return -1;
@@ -990,21 +1270,16 @@ static int fat32_create_entry(const char* name, uint32_t cluster, uint32_t size)
             {
                 int ni, j;
 
-                // Clear the entry
                 for (j = 0; j < 32; j++)
                     e[j] = 0;
-
-                // Space pad name field
                 for (j = 0; j < 11; j++)
                     e[j] = ' ';
 
-                // Write base name in uppercase
                 ni = 0;
                 j  = 0;
                 while (name[ni] && name[ni] != '.' && j < 8)
                     e[j++] = to_upper(name[ni++]);
 
-                // Write extension in uppercase
                 if (name[ni] == '.')
                 {
                     ni++;
@@ -1015,15 +1290,11 @@ static int fat32_create_entry(const char* name, uint32_t cluster, uint32_t size)
 
                 e[11] = FAT_ATTR_ARCHIVE;
 
-                // Cluster high (offset 20)
                 e[20] = (uint8_t)((cluster >> 16) & 0xFF);
                 e[21] = (uint8_t)((cluster >> 24) & 0xFF);
-
-                // Cluster low (offset 26)
                 e[26] = (uint8_t)(cluster & 0xFF);
                 e[27] = (uint8_t)((cluster >> 8) & 0xFF);
 
-                // File size (offset 28)
                 e[28] = (uint8_t)(size & 0xFF);
                 e[29] = (uint8_t)((size >> 8) & 0xFF);
                 e[30] = (uint8_t)((size >> 16) & 0xFF);
@@ -1049,10 +1320,10 @@ static int fat32_create_entry(const char* name, uint32_t cluster, uint32_t size)
 
 uint32_t fat32_get_cwd_cluster(void)
 {
-	return cwd_cluster;
+    return cwd_cluster;
 }
 
 const char* fat32_get_cwd_path(void)
 {
-	return cwd_path;
+    return cwd_path;
 }

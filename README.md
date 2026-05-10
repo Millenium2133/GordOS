@@ -188,3 +188,4 @@ You can also create and write files from within GordOS using the built-in shell 
 - 16KB stack — fine for now, will need addressing before user mode
 - Filenames must be 8.3 uppercase format (e.g. `TEST.TXT`) — input can be lowercase
 - No subdirectory support in `cat`, `write`, `rm`, `rename` — all commands operate on the current working directory only
+- Filenames written via `write` command may have their extension truncated by one character in some cases (e.g. `TEST.TXT` becomes `TEST.TX`)

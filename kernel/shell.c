@@ -510,7 +510,7 @@ void shell_handle_char(char c)
 			if (input_buffer[i] == ' ') { has_space = 1; break; }
 		}
 
-		char matches[16][13];
+		char matches[16][64];
 		int count = 0;
 
 		if (!has_space)
