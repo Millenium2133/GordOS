@@ -18,6 +18,7 @@ static uint32_t* alloc_page_table(void)
 	if (next_table >= 4)
 		return 0;
 	return user_page_tables[next_table++];
+	
 }
 
 void paging_init(void)
@@ -37,10 +38,6 @@ void paging_map_page(uint32_t virt, uint32_t phys, uint32_t flags)
 
 	if (!(page_dir[dir_index] & PAGE_PRESENT))
 	{
-		// No page table exists for this region — allocate one from our pool.
-		// The pool lives in kernel BSS at a known virtual address, so we
-		// subtract KERNEL_VIRTUAL_BASE to get the physical address for the
-		// page directory entry.
 		uint32_t* new_table = alloc_page_table();
 		if (!new_table)
 			return;
@@ -49,9 +46,11 @@ void paging_map_page(uint32_t virt, uint32_t phys, uint32_t flags)
 		page_dir[dir_index] = new_table_phys | PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER;
 	}
 
+	// Ensure the directory entry has the user bit set if this is a user mapping
+	if (flags & PAGE_USER)
+		page_dir[dir_index] |= PAGE_USER;
+
 	// All page tables live in kernel BSS (virtual 0xC0xxxxxx).
-	// The directory stores their physical addresses, so add KERNEL_VIRTUAL_BASE
-	// to get the virtual address we can write through.
 	uint32_t table_phys  = page_dir[dir_index] & ~0xFFF;
 	uint32_t* page_table = (uint32_t*)(table_phys + KERNEL_VIRTUAL_BASE);
 
