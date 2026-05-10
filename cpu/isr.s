@@ -54,6 +54,38 @@ ISR_NOERRORCODE 29
 ISR_ERRORCODE 30
 ISR_NOERRORCODE 31
 
+.global syscall_stub
+syscall_stub:
+	cli
+	push $0
+	push $0x80
+	jmp syscall_common
+
+syscall_common:
+	pusha
+
+	xor %eax, %eax
+	mov %ds, %ax
+	push %eax
+
+	mov $0x10, %ax
+	mov %ax, %ds
+	mov %ax, %es
+	mov %ax, %fs
+	mov %ax, %gs
+
+	call syscall_handler
+
+	pop %eax
+	mov %ax, %ds
+	mov %ax, %es
+	mov %ax, %fs
+	mov %ax, %gs
+
+	popa
+	addl $8, %esp
+	iret
+
 .macro IRQ num vec
 .global irq\num
 irq\num:

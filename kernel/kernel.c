@@ -18,6 +18,7 @@
 #include "fat32.h"
 #include "paging.h"
 #include "pit.h"
+#include "syscall.h"
 
 
 
@@ -28,6 +29,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	gdt_init();
 	pic_remap();
 	idt_init();
+	syscall_init();
 	pmm_init(mbi);
 	paging_init();
 	kmalloc_init();

@@ -38,12 +38,9 @@ Active development.
 **Upcoming work (roughly in order):**
 
 **Near term**
-- Subdirectory navigation in `cat`, `write`, `rm`, `rename` (currently only works in cwd)
-- FAT32 long filename (LFN) support
-- File overwrite improvements
+- FAT32 long filename (LFN) support (Coming way later)
 
 **Medium term**
-- Syscall interface (int 0x80)
 - User mode (ring 3)
 - Basic process/task structure
 - Round-robin scheduler

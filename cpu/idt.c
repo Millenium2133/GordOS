@@ -79,6 +79,8 @@ extern void irq13(void);
 extern void irq14(void);
 extern void irq15(void);
 
+extern void syscall_stub(void);
+
 static void idt_set_entry(int num, uint32_t base, uint16_t selector, uint8_t flags)
 {
 	idt[num].base_low = (base & 0xFFFF);
@@ -146,7 +148,7 @@ void idt_init(void)
 	idt_set_entry(45, (uint32_t)irq13, 0x08, 0x8E);
 	idt_set_entry(46, (uint32_t)irq14, 0x08, 0x8E);
 	idt_set_entry(47, (uint32_t)irq15, 0x08, 0x8E);
-
+	idt_set_entry(0x80, (uint32_t)syscall_stub, 0x08, 0xEE);
 	idt_flush((uint32_t)&ip);
 }
 
