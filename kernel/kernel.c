@@ -19,8 +19,7 @@
 #include "paging.h"
 #include "pit.h"
 #include "syscall.h"
-
-
+#include "usermode.h"
 
 void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 {
@@ -46,7 +45,6 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	else
 		terminal_writestring("ATA init FAILED\n");
 
-
 	// Sanity check for kmalloc
 	void* a = kmalloc(64);
 	void* b = kmalloc(128);
@@ -62,11 +60,10 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	shell_init();
 
 	keyboard_init();
-	pit_init(1000); // 1000Hz timer frequency
+	pit_init(1000);
 	asm volatile("sti");
 
-	// Stops my CPU form running away
-	for(;;)
+	for (;;)
 	{
 		asm volatile("hlt");
 	}

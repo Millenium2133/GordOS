@@ -24,5 +24,6 @@ struct gdt_ptr
 } __attribute__((packed));
 
 void gdt_init(void);
+void tss_set_kernel_stack(uint32_t stack);
 
 #endif
