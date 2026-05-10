@@ -6,27 +6,31 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 
 ---
 
-## Milestone Reached: Higher-Half Kernel
+## Milestone Reached: User Mode (Ring 3)
 
-GordOS now runs as a proper higher-half kernel, with the kernel mapped at virtual `0xC0000000` while low physical memory remains identity-mapped for hardware access. This is the foundation for user mode and process isolation down the line.
+GordOS can now execute code in ring 3 (user mode) and make syscalls back into the kernel via `int 0x80`. The full privilege separation between kernel space and user space is working — a user process ran, printed a message through the syscall interface, and exited cleanly. This is the foundation for real process isolation and multitasking.
 
 ---
 
 ## What GordOS Can Do
 
 - Boots via GRUB on real x86 hardware and QEMU
+- Higher-half kernel running at virtual `0xC0000000`
 - VGA text mode terminal with colour, scrolling, and a hardware cursor
 - PS/2 keyboard driver with full scancode translation, shift, and arrow keys
-- Interactive shell with command history and mid-line cursor movement
-- Tab autocomplete for both commands and filenames/directories
+- Interactive shell with command history, mid-line cursor movement, and tab autocomplete
+- Tab autocomplete for both commands and filenames/directories (including subdirectories)
 - Physical memory manager with bitmap allocator
 - Kernel heap allocator (kmalloc/kfree) with splitting and coalescing
 - ATA PIO disk driver
-- FAT32 filesystem: mount, list directories, read files, create, write, delete, and rename files, directory creation and navigation
-- Higher-half kernel at virtual `0xC0000000` with identity-mapped low memory
-- Page fault handler that prints the faulting address from CR2 and error code
+- FAT32 filesystem: mount, list, read, create, write, delete, rename files and directories
+- Subdirectory navigation with absolute and relative path support
+- Page fault handler that prints the faulting address and error code
 - PIT driver at 1000Hz (timer_ticks, timer_sleep)
 - RTC driver reading real wall-clock time from CMOS
+- Syscall interface via `int 0x80` (sys_write, sys_exit, sys_getpid)
+- Ring 3 GDT segments, TSS, and `jump_to_usermode`
+- `paging_map_page` with user bit support for mapping user-accessible pages
 - Shell commands: `help`, `clear`, `echo`, `about`, `ls`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `time`
 
 ---
@@ -38,18 +42,18 @@ Active development.
 **Upcoming work (roughly in order):**
 
 **Near term**
-- FAT32 long filename (LFN) support (Coming way later)
+- Process/task structure
+- Round-robin scheduler
+- ELF executable loading
 
 **Medium term**
-- User mode (ring 3)
-- Basic process/task structure
-- Round-robin scheduler
+- VFS layer abstracting FAT32 behind a unified file interface
+- Serial port driver (useful for real hardware debugging)
+- FAT32 long filename (LFN) support
 
 **Long term**
-- ELF executable loading
-- Proper VFS layer abstracting FAT32 behind a unified file interface
-- Serial port driver (useful for real hardware debugging)
 - More shell built-ins as the OS grows
+- Networking (very ambitious)
 
 ---
 
@@ -84,8 +88,26 @@ Active development.
 | Boot code + multiboot header | `0x00200000` | `0x00200000` |
 | Kernel text/rodata/data/bss | `0x00202000+` | `0xC0202000+` |
 | Identity map (first 4MB) | `0x00000000` | `0x00000000` |
-| Stack | in .bss | higher half, 16 KB |
+| Stack | in .bss | higher half, 64 KB |
 | Heap | dynamic | managed by kmalloc |
+| User code | `0x00100000` | `0x00100000` |
+| User stack | `0x00xxxxx` | `0xBFFFF000` |
+
+### Syscall Convention
+
+| Register | Purpose |
+| :--- | :--- |
+| `eax` | Syscall number |
+| `ebx` | Argument 1 |
+| `ecx` | Argument 2 |
+| `edx` | Argument 3 |
+| `eax` (return) | Return value |
+
+| Number | Name | Description |
+| :--- | :--- | :--- |
+| 0 | `sys_write` | Write buffer to terminal |
+| 1 | `sys_exit` | Terminate process |
+| 2 | `sys_getpid` | Get process ID (returns 0 for now) |
 
 ### Compilation Flags
 
@@ -182,7 +204,6 @@ You can also create and write files from within GordOS using the built-in shell 
 
 ## Known Issues
 
-- 16KB stack — fine for now, will need addressing before user mode
-- Filenames must be 8.3 uppercase format (e.g. `TEST.TXT`) — input can be lowercase
-- No subdirectory support in `cat`, `write`, `rm`, `rename` — all commands operate on the current working directory only
-- Filenames written via `write` command may have their extension truncated by one character in some cases (e.g. `TEST.TXT` becomes `TEST.TX`)
+- Filenames must be 8.3 uppercase format (e.g. `TEST.TXT`), input can be lowercase
+- Filenames written via `write` command may have their extension truncated by one character in some cases
+- Shell currently runs in ring 0, will be moved to user mode when process support is complete
