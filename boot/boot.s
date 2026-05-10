@@ -46,8 +46,10 @@ _start:
 
 .section .bss
 .align 4096
+.global boot_page_directory
 boot_page_directory:
     .skip 4096
+.global boot_page_table
 boot_page_table:
     .skip 4096
 

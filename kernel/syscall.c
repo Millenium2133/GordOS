@@ -24,10 +24,9 @@ static int sys_write(const char* buf, uint32_t len)
 static void sys_exit(int code)
 {
     (void)code;
+    terminal_writestring("Process exited\n");
     for (;;)
-    {
-        __asm__ volatile ("hlt");
-    }
+        asm volatile("hlt");
 }
 
 // sys_getpid: return a dummy PID (for now)
