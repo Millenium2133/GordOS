@@ -167,10 +167,18 @@ i686-elf-gcc --version
 ```bash
 make        # Compile and link everything
 make iso    # Create the bootable ISO
-make user   # Build the sample user program (user/hello.elf)
-make disk   # Create a fresh FAT32 disk.img with HELLO.ELF installed
+make user   # Build the sample user programs (user/*.elf)
+make disk   # Create a fresh FAT32 disk.img with the user programs installed
 make clean  # Remove all build artifacts
 ```
+
+### Automated boot test
+
+`tools/boot-test.sh` boots the ISO headlessly in QEMU, types
+`exec HELLO.ELF` and `exec CRASH.ELF` into the shell through the QEMU
+monitor, and checks the serial log for the expected output (user
+program ran in ring 3, crashed program was killed cleanly). CI runs it
+on every push.
 
 ---
 
