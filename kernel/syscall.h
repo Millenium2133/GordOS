@@ -9,6 +9,6 @@
 #define SYS_GETPID 2
 
 void syscall_init(void);
-void syscall_handler(struct registers regs);
+void syscall_handler(struct registers* regs);
 
 #endif

@@ -28,10 +28,13 @@ GordOS can now execute code in ring 3 (user mode) and make syscalls back into th
 - Page fault handler that prints the faulting address and error code
 - PIT driver at 1000Hz (timer_ticks, timer_sleep)
 - RTC driver reading real wall-clock time from CMOS
-- Syscall interface via `int 0x80` (sys_write, sys_exit, sys_getpid)
+- Syscall interface via `int 0x80` (sys_write, sys_exit, sys_getpid) with return values in `eax`
 - Ring 3 GDT segments, TSS, and `jump_to_usermode`
 - `paging_map_page` with user bit support for mapping user-accessible pages
-- Shell commands: `help`, `clear`, `echo`, `about`, `ls`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `time`
+- Process structures with per-process page directories and kernel stacks
+- Round-robin scheduler scaffolding (context switch, ready queue, PIT-driven preemption)
+- ELF executable loader (PT_LOAD segments into a process address space)
+- Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `time`, `uptime`, `free`
 
 ---
 
@@ -42,9 +45,9 @@ Active development.
 **Upcoming work (roughly in order):**
 
 **Near term**
-- Process/task structure
-- Round-robin scheduler
-- ELF executable loading
+- Wire the scheduler up to actually run user processes
+- `exec` shell command to load and run ELF binaries from disk
+- Proper process exit and cleanup in `sys_exit`
 
 **Medium term**
 - VFS layer abstracting FAT32 behind a unified file interface
@@ -107,7 +110,7 @@ Active development.
 | :--- | :--- | :--- |
 | 0 | `sys_write` | Write buffer to terminal |
 | 1 | `sys_exit` | Terminate process |
-| 2 | `sys_getpid` | Get process ID (returns 0 for now) |
+| 2 | `sys_getpid` | Get current process ID |
 
 ### Compilation Flags
 
@@ -205,5 +208,5 @@ You can also create and write files from within GordOS using the built-in shell 
 ## Known Issues
 
 - Filenames must be 8.3 uppercase format (e.g. `TEST.TXT`), input can be lowercase
-- Filenames written via `write` command may have their extension truncated by one character in some cases
 - Shell currently runs in ring 0, will be moved to user mode when process support is complete
+- Kernel heap is limited to the identity-mapped low 4MB of physical memory

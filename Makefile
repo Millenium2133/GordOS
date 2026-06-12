@@ -165,10 +165,11 @@ kernel/kernel.o: kernel/kernel.c cpu/gdt.h cpu/idt.h drivers/pic.h \
                  kernel/scheduler.h kernel/elf.h
 	$(CC) $(CFLAGS) -c kernel/kernel.c -o kernel/kernel.o
 
-kernel/shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h drivers/rtc.h
+kernel/shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h \
+                drivers/rtc.h drivers/pit.h fs/fat32.h memory/pmm.h memory/kmalloc.h
 	$(CC) $(CFLAGS) -c kernel/shell.c -o kernel/shell.o
 
-kernel/syscall.o: kernel/syscall.c kernel/syscall.h cpu/idt.h
+kernel/syscall.o: kernel/syscall.c kernel/syscall.h cpu/idt.h kernel/process.h
 	$(CC) $(CFLAGS) -c kernel/syscall.c -o kernel/syscall.o
 
 kernel/usermode.o: kernel/usermode.c kernel/usermode.h cpu/gdt.h
@@ -183,5 +184,5 @@ kernel/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/process.h memor
 kernel/scheduler_asm.o: kernel/scheduler.s
 	$(AS) kernel/scheduler.s -o kernel/scheduler_asm.o
 
-kernel/elf.o: kernel/elf.c kernel/elf.h kernel/process.h memory/paging.h memory/pmm.h
+kernel/elf.o: kernel/elf.c kernel/elf.h kernel/process.h memory/paging.h memory/pmm.h lib/string.h
 	$(CC) $(CFLAGS) -c kernel/elf.c -o kernel/elf.o

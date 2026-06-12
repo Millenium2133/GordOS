@@ -4,6 +4,8 @@
 #include "fat32.h"
 #include "kmalloc.h"
 #include "rtc.h"
+#include "pmm.h"
+#include "pit.h"
 
 #define INPUT_BUFFER_SIZE 256
 
@@ -30,20 +32,18 @@ uint8_t vga_entry_color(enum vga_color fg, enum vga_color bg);
 // + String Utilities +
 // ++++++++++++++++++++
 
-static int shell_strcmp(const char* a, const char* b)
+// Print an unsigned integer in decimal
+static void print_uint(uint32_t n)
 {
-	while (*a && *b && *a == *b) { a++; b++; }
-	return *a - *b;
-}
-
-static int shell_strncmp(const char* a, const char* b, size_t n)
-{
-	for (size_t i = 0; i < n; i++)
+	char buf[11];
+	int i = 10;
+	buf[i] = '\0';
+	do
 	{
-		if (a[i] != b[i]) return a[i] - b[i];
-		if (a[i] == '\0') return 0;
-	}
-	return 0;
+		buf[--i] = '0' + (n % 10);
+		n /= 10;
+	} while (n);
+	terminal_writestring(&buf[i]);
 }
 
 //++++++++++++
@@ -67,16 +67,14 @@ static void cmd_help(void)
 	terminal_writestring("	write	- Write text to file\n");
 	terminal_writestring("	rename	- Rename a file\n");
 	terminal_writestring("	time	- Show current date and time\n");
+	terminal_writestring("	uptime	- Show time since boot\n");
+	terminal_writestring("	free	- Show free memory\n");
 	terminal_writestring("	about	- About GordOS\n");
 }
 
 // clear
 static void cmd_clear(void)
 {
-	for (int y = 0; y < 25; y++)
-		for (int x = 0; x < 80; x++)
-			terminal_putchar(' ');
-
 	extern void terminal_initialize(void);
 	terminal_initialize();
 }
@@ -105,11 +103,12 @@ static void cmd_about(void)
 	terminal_writestring("	https://github.com/Millenium2133/GordOS\n");
 }
 
-// ls
-static void cmd_ls(void)
+// ls [path] — no argument lists the current directory
+static void cmd_ls(const char* args)
 {
-	if (fat32_list_dir("/") != 0)
-		terminal_writestring("ls: filesystem not available\n");
+	const char* path = (args && *args) ? args : "";
+	if (fat32_list_dir(path) != 0)
+		terminal_writestring("ls: cannot list directory\n");
 }
 
 // cat
@@ -130,7 +129,7 @@ static void cmd_cat(const char* args)
 		return;
 	}
 
-	if (fat32_read_file(args, buf, &size) != 0)
+	if (fat32_read_file(args, buf, 65536, &size) != 0)
 	{
 		terminal_writestring("cat: file not found\n");
 		kfree(buf);
@@ -152,6 +151,15 @@ static void cmd_touch(const char* args)
 	if (!args || *args == '\0')
 	{
 		terminal_writestring("Usage: touch FILENAME\n");
+		return;
+	}
+
+	// Don't truncate a file that already exists
+	uint32_t size = 0;
+	char probe;
+	if (fat32_read_file(args, &probe, 0, &size) == 0)
+	{
+		terminal_writestring("touch: file already exists\n");
 		return;
 	}
 
@@ -328,10 +336,41 @@ static void cmd_time(void)
 	terminal_putchar('\n');
 }
 
+// uptime
+static void cmd_uptime(void)
+{
+	uint32_t seconds = timer_ticks() / 1000;
+	terminal_writestring("Up ");
+	print_uint(seconds / 60);
+	terminal_writestring(" min ");
+	print_uint(seconds % 60);
+	terminal_writestring(" sec\n");
+}
+
+// free
+static void cmd_free(void)
+{
+	uint32_t pages = pmm_free_pages();
+	print_uint(pages);
+	terminal_writestring(" pages free (");
+	print_uint(pages * 4);
+	terminal_writestring(" KB)\n");
+}
+
 
 // ++++++++++++++++++++
 // + Command Dispatch +
 // ++++++++++++++++++++
+
+// Returns 1 if the first word of input is exactly cmd
+// (followed by a space or end of string)
+static int is_command(const char* input, const char* cmd)
+{
+	size_t len = strlen(cmd);
+	if (strncmp(input, cmd, len) != 0)
+		return 0;
+	return input[len] == '\0' || input[len] == ' ';
+}
 
 static const char* get_args(const char* input, size_t cmd_len)
 {
@@ -345,47 +384,53 @@ static void shell_execute(const char* input)
 	if (*input == '\0')
 		return;
 
-	if (shell_strcmp(input, "help") == 0)
+	if (is_command(input, "help"))
 		cmd_help();
 
-	else if (shell_strcmp(input, "clear") == 0)
+	else if (is_command(input, "clear"))
 		cmd_clear();
 
-	else if (shell_strncmp(input, "echo", 4) == 0)
+	else if (is_command(input, "echo"))
 		cmd_echo(get_args(input, 4));
 
-	else if (shell_strcmp(input, "about") == 0)
+	else if (is_command(input, "about"))
 		cmd_about();
 
-	else if (shell_strcmp(input, "ls") == 0)
-		cmd_ls();
+	else if (is_command(input, "ls"))
+		cmd_ls(get_args(input, 2));
 
-	else if (shell_strncmp(input, "cat", 3) == 0)
+	else if (is_command(input, "cat"))
 		cmd_cat(get_args(input, 3));
 
-	else if (shell_strncmp(input, "touch", 5) == 0)
+	else if (is_command(input, "touch"))
 		cmd_touch(get_args(input, 5));
 
-	else if (shell_strncmp(input, "write", 5) == 0)
+	else if (is_command(input, "write"))
 		cmd_write(get_args(input, 5));
 
-	else if (shell_strncmp(input, "rm", 2) == 0)
+	else if (is_command(input, "rm"))
 		cmd_rm(get_args(input, 2));
 
-	else if (shell_strncmp(input, "rename", 6) == 0)
+	else if (is_command(input, "rename"))
 		cmd_rename(get_args(input, 6));
 
-	else if (shell_strcmp(input, "pwd") == 0)
+	else if (is_command(input, "pwd"))
 		cmd_pwd();
 
-	else if (shell_strncmp(input, "mkdir", 5) == 0)
+	else if (is_command(input, "mkdir"))
 		cmd_mkdir(get_args(input, 5));
 
-	else if (shell_strncmp(input, "cd", 2) == 0)
+	else if (is_command(input, "cd"))
 		cmd_cd(get_args(input, 2));
 
-	else if (shell_strcmp(input, "time") == 0)
+	else if (is_command(input, "time"))
 		cmd_time();
+
+	else if (is_command(input, "uptime"))
+		cmd_uptime();
+
+	else if (is_command(input, "free"))
+		cmd_free();
 
 	else
 	{
@@ -519,7 +564,7 @@ void shell_handle_char(char c)
 			static const char* commands[] = {
 				"help", "clear", "echo", "about", "ls", "pwd",
 				"cat", "touch", "mkdir", "cd", "rm", "write",
-				"rename", "time", 0
+				"rename", "time", "uptime", "free", 0
 			};
 			for (int ci = 0; commands[ci] != 0 && count < 16; ci++)
 			{
@@ -638,6 +683,9 @@ void shell_handle_char(char c)
 	
 	else if ((unsigned char)c == KEY_DOWN)
 	{
+		if (history_index < 0)
+			return; // not navigating history, leave typed input alone
+
 		history_index--;
 		if (history_index < 0)
 		{
