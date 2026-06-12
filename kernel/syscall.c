@@ -3,6 +3,7 @@
 #include "process.h"
 #include "keyboard.h"
 #include "pit.h"
+#include "fat32.h"
 
 void terminal_writestring(const char* data);
 void terminal_putchar(char c);
@@ -79,6 +80,53 @@ static int sys_sleep(uint32_t ms)
     return 0;
 }
 
+// Copy a NUL-terminated path from user space into a kernel buffer,
+// validating every byte stays below the kernel half.
+// Returns 0 on success, -1 on bad/overlong path.
+static int copy_user_path(const char* upath, char* out, uint32_t outsize)
+{
+    uint32_t i;
+    for (i = 0; i < outsize - 1; i++)
+    {
+        if (!user_range_ok(upath + i, 1))
+            return -1;
+        out[i] = upath[i];
+        if (out[i] == '\0')
+            return 0;
+    }
+    return -1; // unterminated or too long
+}
+
+// sys_readfile: read the file named by ebx into buffer ecx (max edx
+// bytes). Returns the number of bytes read, or -1.
+static int sys_readfile(const char* upath, char* buf, uint32_t max)
+{
+    char path[256];
+    if (copy_user_path(upath, path, sizeof(path)) != 0)
+        return -1;
+    if (!user_range_ok(buf, max))
+        return -1;
+
+    uint32_t size = 0;
+    if (fat32_read_file(path, buf, max, &size) != 0)
+        return -1;
+
+    return (int)size;
+}
+
+// sys_writefile: write ecx (buffer) of edx bytes to the file named by
+// ebx, replacing any existing contents. Returns 0 on success, -1.
+static int sys_writefile(const char* upath, const char* buf, uint32_t len)
+{
+    char path[256];
+    if (copy_user_path(upath, path, sizeof(path)) != 0)
+        return -1;
+    if (!user_range_ok(buf, len))
+        return -1;
+
+    return fat32_write_file(path, buf, len);
+}
+
 // sys_exit: tear down the calling process and hand control back to
 // whoever started it (the shell's exec command)
 static void sys_exit(int code)
@@ -122,6 +170,12 @@ void syscall_handler(struct registers* regs)
             break;
         case SYS_SLEEP:
             ret = sys_sleep(regs->ebx);
+            break;
+        case SYS_READFILE:
+            ret = sys_readfile((const char*)regs->ebx, (char*)regs->ecx, regs->edx);
+            break;
+        case SYS_WRITEFILE:
+            ret = sys_writefile((const char*)regs->ebx, (const char*)regs->ecx, regs->edx);
             break;
         default:
             // Unknown syscall

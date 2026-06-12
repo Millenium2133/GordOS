@@ -28,8 +28,9 @@ GordOS can now load an ELF executable from the FAT32 disk and run it as a real u
 - Page fault handler that prints the faulting address and error code
 - PIT driver at 1000Hz (timer_ticks, timer_sleep)
 - RTC driver reading real wall-clock time from CMOS
-- Syscall interface via `int 0x80` (write, exit, getpid, read, sleep) with return values in `eax`
+- Syscall interface via `int 0x80` (write, exit, getpid, read, sleep, readfile, writefile) with return values in `eax`
 - Faulting user processes are killed and control returns to the shell
+- COM1 serial debug console — all terminal output is mirrored (`qemu -serial stdio` or a serial cable on real hardware)
 - Ring 3 GDT segments, TSS, and `jump_to_usermode`
 - `paging_map_page` with user bit support for mapping user-accessible pages
 - Process structures with per-process page directories and kernel stacks
@@ -37,7 +38,7 @@ GordOS can now load an ELF executable from the FAT32 disk and run it as a real u
 - ELF executable loader (PT_LOAD segments into a process address space)
 - `exec` runs ELF binaries from disk in ring 3 and returns to the shell when they exit
 - Kernel heap and VGA mappings live in the higher half, valid in every address space
-- Sample user programs (`user/hello.c`, interactive `user/echo.c`) built by `make user`, installed by `make disk`
+- Sample user programs (`user/hello.c`, interactive `user/echo.c`, file I/O `user/files.c`) built by `make user`, installed by `make disk`
 - Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `exec`, `time`, `uptime`, `free`
 
 ---
@@ -51,11 +52,10 @@ Active development.
 **Near term**
 - Background processes — wire the round-robin scheduler so multiple
   processes can run concurrently instead of `exec` blocking the shell
-- File syscalls (open/read/write) so user programs can use the filesystem
+- File-descriptor based file syscalls (open/read/write/close)
 
 **Medium term**
 - VFS layer abstracting FAT32 behind a unified file interface
-- Serial port driver (useful for real hardware debugging)
 - FAT32 long filename (LFN) support
 
 **Long term**
@@ -117,6 +117,8 @@ Active development.
 | 2 | `sys_getpid` | Get current process ID |
 | 3 | `sys_read` | Read keyboard input (blocks until at least 1 byte) |
 | 4 | `sys_sleep` | Sleep for N milliseconds |
+| 5 | `sys_readfile` | Read a whole file from disk into a buffer |
+| 6 | `sys_writefile` | Write a buffer to a file, replacing its contents |
 
 ### Compilation Flags
 

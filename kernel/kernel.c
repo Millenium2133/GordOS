@@ -23,12 +23,14 @@
 #include "process.h"
 #include "scheduler.h"
 #include "elf.h"
+#include "serial.h"
 
 
 #define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
 
 void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 {
+	serial_init(); // first, so all terminal output gets mirrored
 	terminal_initialize();
 	if (magic != MULTIBOOT_BOOTLOADER_MAGIC)
 		terminal_writestring("WARNING: bad multiboot magic, memory map may be invalid\n");

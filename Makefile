@@ -23,6 +23,7 @@ OBJS = \
 	drivers/ata.o \
 	drivers/pit.o \
 	drivers/rtc.o \
+	drivers/serial.o \
 	\
 	display/vga.o \
 	display/splash.o \
@@ -63,10 +64,12 @@ disk: user
 	mkfs.fat -F 32 disk.img
 	mcopy -i disk.img user/hello.elf ::HELLO.ELF
 	mcopy -i disk.img user/echo.elf ::ECHO.ELF
+	mcopy -i disk.img user/files.elf ::FILES.ELF
 
 run: GordOS.iso
 	@test -f disk.img || (echo "ERROR: disk.img not found, run 'make disk' first" && exit 1)
 	qemu-system-i386 -boot order=d -rtc base=localtime \
+		-serial stdio \
 		-cdrom GordOS.iso \
 		-drive file=disk.img,format=raw,if=ide,index=0
 
@@ -123,11 +126,14 @@ drivers/pit.o: drivers/pit.c drivers/pit.h drivers/pic.h cpu/idt.h kernel/schedu
 drivers/rtc.o: drivers/rtc.c drivers/rtc.h drivers/pic.h
 	$(CC) $(CFLAGS) -c drivers/rtc.c -o drivers/rtc.o
 
+drivers/serial.o: drivers/serial.c drivers/serial.h drivers/pic.h
+	$(CC) $(CFLAGS) -c drivers/serial.c -o drivers/serial.o
+
 # +------------------+
 # + Display          +
 # +------------------+
 
-display/vga.o: display/vga.c display/vga.h lib/string.h drivers/pic.h
+display/vga.o: display/vga.c display/vga.h lib/string.h drivers/pic.h drivers/serial.h
 	$(CC) $(CFLAGS) -c display/vga.c -o display/vga.o
 
 display/splash.o: display/splash.c display/splash.h display/vga.h
@@ -176,7 +182,7 @@ kernel/shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h \
 	$(CC) $(CFLAGS) -c kernel/shell.c -o kernel/shell.o
 
 kernel/syscall.o: kernel/syscall.c kernel/syscall.h cpu/idt.h kernel/process.h \
-                  drivers/keyboard.h drivers/pit.h
+                  drivers/keyboard.h drivers/pit.h fs/fat32.h
 	$(CC) $(CFLAGS) -c kernel/syscall.c -o kernel/syscall.o
 
 kernel/usermode.o: kernel/usermode.c kernel/usermode.h cpu/gdt.h
@@ -201,7 +207,7 @@ kernel/elf.o: kernel/elf.c kernel/elf.h kernel/process.h memory/paging.h memory/
 # + User Programs    +
 # +------------------+
 
-user: user/hello.elf user/echo.elf
+user: user/hello.elf user/echo.elf user/files.elf
 
 user/hello.elf: user/hello.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
@@ -210,3 +216,7 @@ user/hello.elf: user/hello.c user/linker.ld
 user/echo.elf: user/echo.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
 	      -T user/linker.ld user/echo.c -o user/echo.elf
+
+user/files.elf: user/files.c user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
+	      -T user/linker.ld user/files.c -o user/files.elf

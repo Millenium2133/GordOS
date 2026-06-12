@@ -9,6 +9,8 @@
 #define SYS_GETPID 2
 #define SYS_READ 3
 #define SYS_SLEEP 4
+#define SYS_READFILE 5
+#define SYS_WRITEFILE 6
 
 void syscall_init(void);
 void syscall_handler(struct registers* regs);
