@@ -62,6 +62,7 @@ disk: user
 	qemu-img create -f raw disk.img 64M
 	mkfs.fat -F 32 disk.img
 	mcopy -i disk.img user/hello.elf ::HELLO.ELF
+	mcopy -i disk.img user/echo.elf ::ECHO.ELF
 
 run: GordOS.iso
 	@test -f disk.img || (echo "ERROR: disk.img not found, run 'make disk' first" && exit 1)
@@ -93,7 +94,7 @@ cpu/gdt.o: cpu/gdt.c cpu/gdt.h
 cpu/gdt_flush.o: cpu/gdt_flush.s
 	$(AS) cpu/gdt_flush.s -o cpu/gdt_flush.o
 
-cpu/idt.o: cpu/idt.c cpu/idt.h drivers/pic.h
+cpu/idt.o: cpu/idt.c cpu/idt.h drivers/pic.h kernel/process.h
 	$(CC) $(CFLAGS) -c cpu/idt.c -o cpu/idt.o
 
 cpu/idt_flush.o: cpu/idt_flush.s
@@ -109,7 +110,8 @@ cpu/isr.o: cpu/isr.s
 drivers/pic.o: drivers/pic.c drivers/pic.h
 	$(CC) $(CFLAGS) -c drivers/pic.c -o drivers/pic.o
 
-drivers/keyboard.o: drivers/keyboard.c drivers/keyboard.h cpu/idt.h drivers/pic.h kernel/shell.h
+drivers/keyboard.o: drivers/keyboard.c drivers/keyboard.h cpu/idt.h drivers/pic.h \
+                    kernel/shell.h kernel/process.h
 	$(CC) $(CFLAGS) -c drivers/keyboard.c -o drivers/keyboard.o
 
 drivers/ata.o: drivers/ata.c drivers/ata.h drivers/pic.h
@@ -170,10 +172,11 @@ kernel/kernel.o: kernel/kernel.c cpu/gdt.h cpu/idt.h drivers/pic.h \
 
 kernel/shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h \
                 drivers/rtc.h drivers/pit.h fs/fat32.h memory/pmm.h memory/kmalloc.h \
-                kernel/process.h kernel/elf.h memory/paging.h
+                kernel/process.h kernel/elf.h memory/paging.h drivers/keyboard.h
 	$(CC) $(CFLAGS) -c kernel/shell.c -o kernel/shell.o
 
-kernel/syscall.o: kernel/syscall.c kernel/syscall.h cpu/idt.h kernel/process.h
+kernel/syscall.o: kernel/syscall.c kernel/syscall.h cpu/idt.h kernel/process.h \
+                  drivers/keyboard.h drivers/pit.h
 	$(CC) $(CFLAGS) -c kernel/syscall.c -o kernel/syscall.o
 
 kernel/usermode.o: kernel/usermode.c kernel/usermode.h cpu/gdt.h
@@ -198,8 +201,12 @@ kernel/elf.o: kernel/elf.c kernel/elf.h kernel/process.h memory/paging.h memory/
 # + User Programs    +
 # +------------------+
 
-user: user/hello.elf
+user: user/hello.elf user/echo.elf
 
 user/hello.elf: user/hello.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
 	      -T user/linker.ld user/hello.c -o user/hello.elf
+
+user/echo.elf: user/echo.c user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
+	      -T user/linker.ld user/echo.c -o user/echo.elf

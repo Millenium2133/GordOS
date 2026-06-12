@@ -9,6 +9,7 @@
 #include "process.h"
 #include "elf.h"
 #include "paging.h"
+#include "keyboard.h"
 
 #define INPUT_BUFFER_SIZE 256
 
@@ -398,6 +399,9 @@ static void cmd_exec(const char* args)
 	paging_map_page_in(proc->page_directory, USER_STACK_PAGE,
 	                   (uint32_t)stack_phys,
 	                   PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER);
+
+	// Don't let the program see keystrokes from before it started
+	keyboard_flush();
 
 	// Runs the program in ring 3, returns when it exits
 	process_run(proc, entry, USER_STACK_TOP);

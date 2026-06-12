@@ -2,6 +2,52 @@
 #include "idt.h"
 #include "pic.h"
 #include "shell.h"
+#include "process.h"
+
+// Ring buffer for input while a user process is running. The shell is
+// suspended inside exec then, so keystrokes are stored here for
+// sys_read instead of being fed to the shell.
+#define KBD_BUFFER_SIZE 256
+static volatile char kbd_buffer[KBD_BUFFER_SIZE];
+static volatile int kbd_head = 0;
+static volatile int kbd_tail = 0;
+
+int keyboard_read_char(void)
+{
+    if (kbd_tail == kbd_head)
+        return -1;
+
+    char c = kbd_buffer[kbd_tail];
+    kbd_tail = (kbd_tail + 1) % KBD_BUFFER_SIZE;
+    return (unsigned char)c;
+}
+
+void keyboard_flush(void)
+{
+    kbd_tail = kbd_head;
+}
+
+// Route a decoded character: to the user-input buffer if a process is
+// running, otherwise to the shell
+static void deliver_char(char c)
+{
+    if (current_process)
+    {
+        // Shell editing keys mean nothing to a user program
+        if ((unsigned char)c >= 0x80)
+            return;
+
+        int next = (kbd_head + 1) % KBD_BUFFER_SIZE;
+        if (next != kbd_tail)
+        {
+            kbd_buffer[kbd_head] = c;
+            kbd_head = next;
+        }
+        return;
+    }
+
+    shell_handle_char(c);
+}
 
 static const char scancode_table[128] =
 {
@@ -51,22 +97,22 @@ static void keyboard_handler(struct registers regs)
         extended = 0;
         switch (scancode)
         {
-            case 0x48: shell_handle_char(KEY_UP);    return;
-            case 0x50: shell_handle_char(KEY_DOWN);  return;
-            case 0x4B: shell_handle_char(KEY_LEFT);  return;
-            case 0x4D: shell_handle_char(KEY_RIGHT); return;
+            case 0x48: deliver_char(KEY_UP);    return;
+            case 0x50: deliver_char(KEY_DOWN);  return;
+            case 0x4B: deliver_char(KEY_LEFT);  return;
+            case 0x4D: deliver_char(KEY_RIGHT); return;
         }
         return;
     }
 
     if (scancode == 0x2A || scancode == 0x36) { shift_pressed = 1; return; }
-    if (scancode == 0x0F) { shell_handle_char(KEY_TAB); return; }
-    if (scancode == 0x1C) { shell_handle_char('\n'); return; }
-    if (scancode == 0x0E) { shell_handle_char('\b'); return; }
+    if (scancode == 0x0F) { deliver_char(KEY_TAB); return; }
+    if (scancode == 0x1C) { deliver_char('\n'); return; }
+    if (scancode == 0x0E) { deliver_char('\b'); return; }
 
     char c = shift_pressed ? scancode_table_shift[scancode] : scancode_table[scancode];
     if (c != 0)
-        shell_handle_char(c);
+        deliver_char(c);
 }
 
 void keyboard_init(void)

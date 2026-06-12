@@ -1,5 +1,6 @@
 #include "idt.h"
 #include "pic.h"
+#include "process.h"
 
 static void (*irq_handlers[16])(struct registers) = {0};
 
@@ -192,6 +193,16 @@ void isr_handler(struct registers regs)
 	}
 
 	terminal_putchar('\n');
+
+	// If the fault came from ring 3, kill the offending process and
+	// return to the shell instead of taking the whole system down
+	if ((regs.cs & 3) == 3 && current_process)
+	{
+		terminal_writestring("User process killed\n");
+		process_exit(); // never returns
+	}
+
+	// Kernel fault: nothing sane to do, halt
 	for (;;)
 	{
 		asm volatile("hlt");
