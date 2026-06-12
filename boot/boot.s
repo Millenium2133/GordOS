@@ -15,6 +15,10 @@
 .global _start
 .type _start, @function
 _start:
+    # GRUB hands us the multiboot magic in eax — stash it in esi
+    # before the page table loop clobbers eax
+    movl %eax, %esi
+
     # Fill boot_page_table to identity-map the first 4MB
     movl $(boot_page_table - KERNEL_VIRTUAL_BASE), %edi
     movl $0x3, %eax
@@ -63,8 +67,8 @@ stack_top:
 .type higher_half_start, @function
 higher_half_start:
     movl $stack_top, %esp
-    push %ebx
-    push %eax
+    push %ebx       # multiboot info pointer
+    push %esi       # multiboot magic (saved from eax in _start)
     call kernel_main
     cli
 1:  hlt

@@ -396,9 +396,15 @@ static void cmd_exec(const char* args)
 		process_destroy(proc);
 		return;
 	}
-	paging_map_page_in(proc->page_directory, USER_STACK_PAGE,
-	                   (uint32_t)stack_phys,
-	                   PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER);
+	if (paging_map_page_in(proc->page_directory, USER_STACK_PAGE,
+	                       (uint32_t)stack_phys,
+	                       PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER) != 0)
+	{
+		terminal_writestring("exec: out of page tables\n");
+		pmm_free_page(stack_phys);
+		process_destroy(proc);
+		return;
+	}
 
 	// Don't let the program see keystrokes from before it started
 	keyboard_flush();

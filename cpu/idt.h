@@ -11,7 +11,9 @@ struct registers
 	uint32_t eip, cs, eflags, useresp, ss;
 };
 
-void irq_register(int irq, void (*handler)(struct registers));
+// Handlers receive a pointer to the saved register frame on the stack;
+// writes through it (e.g. to eax) are restored when the stub irets
+void irq_register(int irq, void (*handler)(struct registers*));
 
 struct idt_entry
 {

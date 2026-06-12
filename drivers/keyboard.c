@@ -71,7 +71,7 @@ static const char scancode_table_shift[128] =
 static int shift_pressed = 0;
 static int extended = 0;
 
-static void keyboard_handler(struct registers regs)
+static void keyboard_handler(struct registers* regs)
 {
     (void)regs;
 

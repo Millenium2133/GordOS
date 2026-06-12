@@ -66,12 +66,6 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	else
 		terminal_writestring("kmalloc FAILED\n");
 
-	splash_show();
-	shell_init();
-
-	keyboard_init();
-	pit_init(1000);
-
 	// Smoke test: create a process with mapped code/stack pages,
 	// then tear it down again so nothing is leaked
 	process_t* proc = process_create();
@@ -95,6 +89,12 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	{
 		terminal_writestring("Process creation FAILED\n");
 	}
+
+	splash_show();
+	shell_init();
+
+	keyboard_init();
+	pit_init(1000);
 
 	asm volatile("sti");
 
