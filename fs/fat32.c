@@ -559,26 +559,24 @@ prefix_dir_found:;
 
             // Check if name starts with name_prefix
             int match = 1;
-
-            // Check if name starts with name_prefix
-            int match2 = 1;
             for (j = 0; j < name_prefix_len; j++)
             {
                 if (to_upper(name[j]) != to_upper(name_prefix[j]))
                 {
-                    match2 = 0;
+                    match = 0;
                     break;
                 }
             }
 
-            if (match2 && count < max_matches)
+            if (match && count < max_matches)
             {
                 // Build the full match including the directory part
+                // (matches[] entries are 64 bytes, leave room for '\0')
                 int mi = 0;
                 int k;
-                for (k = 0; k < dir_part_len && mi < 12; k++)
+                for (k = 0; k < dir_part_len && mi < 63; k++)
                     matches[count][mi++] = dir_part[k];
-                for (k = 0; name[k] && mi < 12; k++)
+                for (k = 0; name[k] && mi < 63; k++)
                     matches[count][mi++] = name[k];
                 matches[count][mi] = '\0';
                 count++;
@@ -593,7 +591,7 @@ done:
     return count;
 }
 
-int fat32_read_file(const char* path, void* buffer, uint32_t* size)
+int fat32_read_file(const char* path, void* buffer, uint32_t bufsize, uint32_t* size)
 {
     if (!path || !buffer || !size)
         return -1;
@@ -677,6 +675,10 @@ not_found:
         kfree(buf);
         return -1;
     }
+
+    // Never read more than the caller's buffer can hold
+    if (file_size > bufsize)
+        file_size = bufsize;
 
     uint32_t bytes_read = 0;
     uint8_t* out = (uint8_t*)buffer;

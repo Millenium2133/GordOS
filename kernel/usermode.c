@@ -10,8 +10,15 @@
  
 void jump_to_usermode(uint32_t eip, uint32_t esp)
 {
-	tss_set_kernel_stack(esp);
- 
+	// When an interrupt or syscall arrives in ring 3, the CPU loads
+	// esp0 from the TSS. That must be a *kernel* stack, not the user
+	// stack we're about to hand to the process — use the current
+	// kernel esp (we never return from this function, so reusing the
+	// stack from here down is safe).
+	uint32_t kernel_esp;
+	asm volatile("mov %%esp, %0" : "=r"(kernel_esp));
+	tss_set_kernel_stack(kernel_esp);
+
 	asm volatile(
 		"cli\n"
 		"mov %0, %%ax\n"

@@ -12,10 +12,14 @@ void irq_handler(struct registers regs)
 {
 	int irq = regs.int_no - 32;
 
+	// Acknowledge the PIC before running the handler. Interrupts stay
+	// disabled until iret, so this can't nest — but it means a handler
+	// that context-switches away (e.g. the scheduler) doesn't leave the
+	// PIC waiting for an EOI that never comes.
+	pic_send_eoi(irq);
+
 	if (irq_handlers[irq] != 0)
 		irq_handlers[irq](regs);
-
-	pic_send_eoi(irq);
 }
 
 void terminal_writestring(const char* data);
@@ -154,20 +158,20 @@ void idt_init(void)
 
 
 
-static const char *exeption_names[] = {
+static const char *exception_names[] = {
 	"Divide by Zero", "Debug", "Non-Maskable Interrupt", "Breakpoint", "Overflow",
-	"Bound Range Exeeded", "Invalid Opcode", "Device Not Available", "Double Fault",
-	"Coprocessor Segment Overrun", "Invalid TSS", "Segment Not preasent", "Stack Segment Fault",
-	"General Protection fault", "Page Fault", "Reserved", "x87 Floating Point", "allingment check", 
-	"Machine Check", "SIMD Floating Point", "Virtualization", "reserved", "Reserved", "Reserved",
-	"Reserved", "Reserved", "Reserved", "Reserved", "Reserved", "reserved", "Security exeption",
+	"Bound Range Exceeded", "Invalid Opcode", "Device Not Available", "Double Fault",
+	"Coprocessor Segment Overrun", "Invalid TSS", "Segment Not Present", "Stack Segment Fault",
+	"General Protection Fault", "Page Fault", "Reserved", "x87 Floating Point", "Alignment Check",
+	"Machine Check", "SIMD Floating Point", "Virtualization", "Reserved", "Reserved", "Reserved",
+	"Reserved", "Reserved", "Reserved", "Reserved", "Reserved", "Reserved", "Security Exception",
 	"Reserved"
 };
 
 void isr_handler(struct registers regs)
 {
-	terminal_writestring("EXEPTION: ");
-	terminal_writestring(exeption_names[regs.int_no]);
+	terminal_writestring("EXCEPTION: ");
+	terminal_writestring(exception_names[regs.int_no]);
 	
 	if (regs.int_no == 14)
 	{

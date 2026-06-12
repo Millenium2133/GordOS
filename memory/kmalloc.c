@@ -99,8 +99,12 @@ void kfree(void* ptr)
     block->free = 1;
 
     // Merge with next block if it's also free (coalescing)
-    // This prevents fragmentation over time
-    if (block->next && block->next->free)
+    // This prevents fragmentation over time.
+    // Only merge if the blocks are physically adjacent — blocks from
+    // separate PMM allocations may have gaps between them, and merging
+    // across a gap would hand out memory we don't own.
+    if (block->next && block->next->free &&
+        (uint8_t*)block + HEADER_SIZE + block->size == (uint8_t*)block->next)
     {
         block->size += HEADER_SIZE + block->next->size;
         block->next = block->next->next;

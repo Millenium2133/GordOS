@@ -58,6 +58,24 @@ void paging_map_page(uint32_t virt, uint32_t phys, uint32_t flags)
 	asm volatile("invlpg (%0)" : : "r"(virt) : "memory");
 }
 
+// Remove a mapping from the current (boot) address space.
+void paging_unmap_page(uint32_t virt)
+{
+	uint32_t dir_index   = virt >> 22;
+	uint32_t table_index = (virt >> 12) & 0x3FF;
+
+	uint32_t* page_dir = boot_page_directory;
+
+	if (!(page_dir[dir_index] & PAGE_PRESENT))
+		return;
+
+	uint32_t table_phys  = page_dir[dir_index] & ~0xFFF;
+	uint32_t* page_table = (uint32_t*)(table_phys + KERNEL_VIRTUAL_BASE);
+
+	page_table[table_index] = 0;
+	asm volatile("invlpg (%0)" : : "r"(virt) : "memory");
+}
+
 // Create a new page directory with kernel mappings copied in.
 // Returns the VIRTUAL address of the new page directory,
 // or 0 on failure.

@@ -2,10 +2,15 @@
 #include "multiboot.h"
 
 // one bit per 4KB page covering the first 4GB
-// 4GB / 4KB = 104856 pages
-// 104856 / 8 = 131072 bytes = 128kb for the bitmap
+// 4GB / 4KB = 1048576 pages
+// 1048576 / 8 = 131072 bytes = 128KB for the bitmap
 #define MAX_PAGES 1048576
 #define BITMAP_SIZE (MAX_PAGES / 8)
+
+// Only the first 4MB of physical memory is identity-mapped (boot.s).
+// Callers of pmm_alloc_contiguous (the kernel heap) dereference the
+// returned physical address directly, so it must stay below this line.
+#define IDENTITY_MAPPED_PAGES (0x400000 / PAGE_SIZE)
 
 static uint8_t bitmap[BITMAP_SIZE];
 static uint32_t total_pages = 0;
@@ -62,7 +67,7 @@ void pmm_init(multiboot_info_t* mbi)
 		mmap = (multiboot_mmap_t*)((uint32_t)mmap + mmap->size +4);
 	}
 
-	// remark bage 0 as used
+	// re-mark page 0 as used
 	bitmap_set(0);
 
 	// re mark kernel as used
@@ -79,7 +84,7 @@ void pmm_init(multiboot_info_t* mbi)
 
 void* pmm_alloc_contiguous(size_t n)
 {
-	for (uint32_t i = 0; i + n <= MAX_PAGES; i++)
+	for (uint32_t i = 0; i + n <= IDENTITY_MAPPED_PAGES; i++)
 	{
 		int ok = 1;
 		for (size_t j = 0; j < n; j++)
@@ -101,7 +106,10 @@ void* pmm_alloc_contiguous(size_t n)
 
 void* pmm_alloc_page(void)
 {
-	for (uint32_t i = 0; i < MAX_PAGES; i++)
+	// Prefer pages above the identity-mapped 4MB region. Callers map
+	// these explicitly (user pages), so this preserves the low region
+	// for the kernel heap, which needs identity-mapped memory.
+	for (uint32_t i = IDENTITY_MAPPED_PAGES; i < MAX_PAGES; i++)
 	{
 		if (!bitmap_test(i))
 		{
@@ -110,12 +118,25 @@ void* pmm_alloc_page(void)
 			return (void*)(i * PAGE_SIZE);
 		}
 	}
-	return 0; // out of memorty
+
+	// Fall back to the low region if nothing else is left
+	for (uint32_t i = 0; i < IDENTITY_MAPPED_PAGES; i++)
+	{
+		if (!bitmap_test(i))
+		{
+			bitmap_set(i);
+			free_pages--;
+			return (void*)(i * PAGE_SIZE);
+		}
+	}
+	return 0; // out of memory
 }
 
 void pmm_free_page(void* addr)
 {
 	uint32_t page = (uint32_t)addr / PAGE_SIZE;
+	if (!bitmap_test(page))
+		return; // already free, don't double-count
 	bitmap_clear(page);
 	free_pages++;
 }

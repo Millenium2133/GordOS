@@ -74,7 +74,11 @@ syscall_common:
 	mov %ax, %fs
 	mov %ax, %gs
 
+	# Pass a pointer to the saved register frame so the handler
+	# can write the return value into the saved eax before popa
+	push %esp
 	call syscall_handler
+	add $4, %esp
 
 	pop %eax
 	mov %ax, %ds

@@ -2,21 +2,13 @@
 #include "paging.h"
 #include "pmm.h"
 #include "kmalloc.h"
+#include "string.h"
 
-// Simple memcpy since we don't have the standard library
-static void elf_memcpy(uint8_t* dst, uint8_t* src, uint32_t n)
-{
-    uint32_t i;
-    for (i = 0; i < n; i++)
-        dst[i] = src[i];
-}
-
-static void elf_memzero(uint8_t* dst, uint32_t n)
-{
-    uint32_t i;
-    for (i = 0; i < n; i++)
-        dst[i] = 0;
-}
+// Temporary kernel-side window used to copy segment data into freshly
+// allocated physical pages. This sits just above the kernel's 4MB
+// boot mapping (0xC0000000-0xC0400000) so remapping it never clobbers
+// an existing kernel mapping.
+#define SCRATCH_VIRT 0xC0400000
 
 uint32_t elf_load(process_t* proc, void* elf_data, uint32_t elf_size)
 {
@@ -62,13 +54,12 @@ uint32_t elf_load(process_t* proc, void* elf_data, uint32_t elf_size)
             paging_map_page_in(proc->page_directory, virt, (uint32_t)phys,
                                PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER);
 
-            #define SCRATCH_VIRT 0xC03FF000
             paging_map_page(SCRATCH_VIRT, (uint32_t)phys, PAGE_PRESENT | PAGE_WRITEABLE);
 
             uint8_t* scratch = (uint8_t*)SCRATCH_VIRT;
 
             // Zero the page first
-            elf_memzero(scratch, 0x1000);
+            memset(scratch, 0, 0x1000);
 
             // Copy file data if this page overlaps with the file portion
             uint32_t page_start = page * 0x1000;
@@ -85,12 +76,11 @@ uint32_t elf_load(process_t* proc, void* elf_data, uint32_t elf_size)
                 uint8_t* src = (uint8_t*)elf_data + phdr->offset + (copy_start - file_start);
                 uint8_t* dst = scratch + (copy_start - page_start);
 
-                elf_memcpy(dst, src, copy_len);
+                memcpy(dst, src, copy_len);
             }
 
             // Remove the scratch mapping
-            paging_map_page(SCRATCH_VIRT, 0, 0);
-            asm volatile("invlpg (%0)" : : "r"(SCRATCH_VIRT) : "memory");
+            paging_unmap_page(SCRATCH_VIRT);
         }
     }
 

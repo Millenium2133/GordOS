@@ -25,10 +25,13 @@
 #include "elf.h"
 
 
+#define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
+
 void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 {
 	terminal_initialize();
-	(void)magic;
+	if (magic != MULTIBOOT_BOOTLOADER_MAGIC)
+		terminal_writestring("WARNING: bad multiboot magic, memory map may be invalid\n");
 	gdt_init();
 	pic_remap();
 	idt_init();
@@ -67,7 +70,8 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	keyboard_init();
 	pit_init(1000);
 
-	// Test: create process and map pages
+	// Smoke test: create a process with mapped code/stack pages,
+	// then tear it down again so nothing is leaked
 	process_t* proc = process_create();
 	if (proc)
 	{
@@ -82,7 +86,8 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 		                   (uint32_t)stack_phys,
 		                   PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER);
 
-		terminal_writestring("Process created OK\n");
+		process_destroy(proc);
+		terminal_writestring("Process subsystem OK\n");
 	}
 	else
 	{

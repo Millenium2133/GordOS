@@ -75,7 +75,7 @@ void scheduler_tick(void)
 // or directly (voluntary yield).
 void scheduler_switch(void)
 {
-    if (!ready_queue)
+    if (!ready_queue || !current_process)
         return;
 
     process_t* next = ready_queue->next;

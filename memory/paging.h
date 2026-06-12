@@ -14,5 +14,6 @@ void paging_map_page_in(uint32_t* page_directory, uint32_t virt, uint32_t phys, 
 void paging_switch_address_space(uint32_t* page_directory);
 void paging_init(void);
 void paging_map_page(uint32_t virt, uint32_t phys, uint32_t flags);
+void paging_unmap_page(uint32_t virt);
 
 #endif
