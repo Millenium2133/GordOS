@@ -70,3 +70,5 @@ higher_half_start:
 1:  hlt
     jmp 1b
 .size higher_half_start, . - higher_half_start
+
+.section .note.GNU-stack, "", @progbits

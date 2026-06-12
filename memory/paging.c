@@ -1,8 +1,6 @@
 #include "paging.h"
 #include "pmm.h"
 
-#define KERNEL_VIRTUAL_BASE 0xC0000000
-
 // The boot page directory is set up in boot.s
 extern uint32_t boot_page_directory[1024];
 
@@ -156,4 +154,10 @@ void paging_switch_address_space(uint32_t* page_directory)
 {
     uint32_t phys = (uint32_t)page_directory - KERNEL_VIRTUAL_BASE;
     asm volatile("mov %0, %%cr3" : : "r"(phys) : "memory");
+}
+
+// Switch back to the kernel's own (boot) address space.
+void paging_switch_to_kernel(void)
+{
+    paging_switch_address_space(boot_page_directory);
 }

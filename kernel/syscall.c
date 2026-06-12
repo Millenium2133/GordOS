@@ -8,10 +8,12 @@ void terminal_putchar(char c);
 // sys_write: write ebx (buffer) of ecx (length) bytes to the terminal
 static int sys_write(const char* buf, uint32_t len)
 {
-    if (!buf)
-    {
-        return -1; // Invalid buffer
-    }
+    uint32_t start = (uint32_t)buf;
+
+    // Reject null, kernel-space, or wrapping buffers — user code must
+    // not be able to make the kernel read its own address space
+    if (!buf || start >= 0xC0000000 || len > 0xC0000000 - start)
+        return -1;
 
     uint32_t i;
     for (i = 0; i < len; i++)
@@ -21,11 +23,17 @@ static int sys_write(const char* buf, uint32_t len)
     return (int)len;
 }
 
-// sys_exit: park the caller. Interrupts stay enabled so the rest
-// of the system (timer, keyboard, shell) keeps running.
+// sys_exit: tear down the calling process and hand control back to
+// whoever started it (the shell's exec command)
 static void sys_exit(int code)
 {
     (void)code;
+
+    if (current_process)
+        process_exit(); // never returns
+
+    // No process context (exit called from the kernel itself):
+    // park with interrupts on so the shell keeps running
     terminal_writestring("Process exited\n");
     asm volatile("sti");
     for (;;)

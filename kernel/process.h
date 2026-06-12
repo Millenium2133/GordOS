@@ -8,7 +8,10 @@
 #define PROCESS_BLOCKED 2
 #define PROCESS_DEAD    3
 
-#define KERNEL_STACK_SIZE 4096
+// Per-process kernel stack. Interrupts and syscalls from ring 3 run on
+// this (via TSS esp0), including the whole shell from the keyboard IRQ,
+// so it needs headroom beyond a single page.
+#define KERNEL_STACK_SIZE 16384
 
 typedef struct process
 {
@@ -38,6 +41,15 @@ process_t* process_create(void);
 
 // Free a process and all its resources
 void process_destroy(process_t* proc);
+
+// Run a process in ring 3 at the given entry point and user stack.
+// Blocks until the process exits via sys_exit, then returns to the
+// caller with the kernel address space restored.
+void process_run(process_t* proc, uint32_t entry, uint32_t user_esp);
+
+// Called from sys_exit: tear down the current process context and
+// resume whoever called process_run. Never returns.
+void process_exit(void);
 
 // The currently running process
 extern process_t* current_process;

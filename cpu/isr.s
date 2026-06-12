@@ -167,3 +167,5 @@ isr_common:
 	popa
 	add $8, %esp
 	iret
+
+.section .note.GNU-stack, "", @progbits

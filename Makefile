@@ -39,6 +39,7 @@ OBJS = \
 	kernel/shell.o \
 	kernel/syscall.o \
 	kernel/usermode.o \
+	kernel/usermode_asm.o \
 	kernel/process.o \
 	kernel/scheduler.o \
 	kernel/scheduler_asm.o \
@@ -57,9 +58,10 @@ iso: GordOS
 	cp grub.cfg isodir/boot/grub/grub.cfg
 	grub-mkrescue -o GordOS.iso isodir
 
-disk:
+disk: user
 	qemu-img create -f raw disk.img 64M
 	mkfs.fat -F 32 disk.img
+	mcopy -i disk.img user/hello.elf ::HELLO.ELF
 
 run: GordOS.iso
 	@test -f disk.img || (echo "ERROR: disk.img not found, run 'make disk' first" && exit 1)
@@ -70,8 +72,9 @@ run: GordOS.iso
 clean:
 	rm -rf *.o GordOS GordOS.iso isodir/ disk.img
 	rm -rf cpu/*.o drivers/*.o display/*.o lib/*.o memory/*.o fs/*.o kernel/*.o
+	rm -rf user/*.elf
 
-.PHONY: clean iso disk run
+.PHONY: clean iso disk run user
 
 # +------------------+
 # + Boot             +
@@ -166,7 +169,8 @@ kernel/kernel.o: kernel/kernel.c cpu/gdt.h cpu/idt.h drivers/pic.h \
 	$(CC) $(CFLAGS) -c kernel/kernel.c -o kernel/kernel.o
 
 kernel/shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h \
-                drivers/rtc.h drivers/pit.h fs/fat32.h memory/pmm.h memory/kmalloc.h
+                drivers/rtc.h drivers/pit.h fs/fat32.h memory/pmm.h memory/kmalloc.h \
+                kernel/process.h kernel/elf.h memory/paging.h
 	$(CC) $(CFLAGS) -c kernel/shell.c -o kernel/shell.o
 
 kernel/syscall.o: kernel/syscall.c kernel/syscall.h cpu/idt.h kernel/process.h
@@ -175,7 +179,10 @@ kernel/syscall.o: kernel/syscall.c kernel/syscall.h cpu/idt.h kernel/process.h
 kernel/usermode.o: kernel/usermode.c kernel/usermode.h cpu/gdt.h
 	$(CC) $(CFLAGS) -c kernel/usermode.c -o kernel/usermode.o
 
-kernel/process.o: kernel/process.c kernel/process.h memory/paging.h memory/kmalloc.h
+kernel/usermode_asm.o: kernel/usermode.s
+	$(AS) kernel/usermode.s -o kernel/usermode_asm.o
+
+kernel/process.o: kernel/process.c kernel/process.h memory/paging.h memory/kmalloc.h cpu/gdt.h
 	$(CC) $(CFLAGS) -c kernel/process.c -o kernel/process.o
 
 kernel/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/process.h memory/paging.h cpu/gdt.h
@@ -186,3 +193,13 @@ kernel/scheduler_asm.o: kernel/scheduler.s
 
 kernel/elf.o: kernel/elf.c kernel/elf.h kernel/process.h memory/paging.h memory/pmm.h lib/string.h
 	$(CC) $(CFLAGS) -c kernel/elf.c -o kernel/elf.o
+
+# +------------------+
+# + User Programs    +
+# +------------------+
+
+user: user/hello.elf
+
+user/hello.elf: user/hello.c user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
+	      -T user/linker.ld user/hello.c -o user/hello.elf

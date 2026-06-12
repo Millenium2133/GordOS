@@ -28,3 +28,5 @@ scheduler_asm_switch:
     ret
 
 .size scheduler_asm_switch, . - scheduler_asm_switch
+
+.section .note.GNU-stack, "", @progbits

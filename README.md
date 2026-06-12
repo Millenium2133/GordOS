@@ -6,9 +6,9 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 
 ---
 
-## Milestone Reached: User Mode (Ring 3)
+## Milestone Reached: Running User Programs From Disk
 
-GordOS can now execute code in ring 3 (user mode) and make syscalls back into the kernel via `int 0x80`. The full privilege separation between kernel space and user space is working — a user process ran, printed a message through the syscall interface, and exited cleanly. This is the foundation for real process isolation and multitasking.
+GordOS can now load an ELF executable from the FAT32 disk and run it as a real user process: the `exec` shell command reads the binary, creates a process with its own page directory and kernel stack, loads the `PT_LOAD` segments, maps a user stack, and drops to ring 3. When the program calls `sys_exit`, control returns cleanly to the shell. A sample user program lives in `user/hello.c` and is copied onto the disk image by `make disk` — try `exec HELLO.ELF`.
 
 ---
 
@@ -34,7 +34,10 @@ GordOS can now execute code in ring 3 (user mode) and make syscalls back into th
 - Process structures with per-process page directories and kernel stacks
 - Round-robin scheduler scaffolding (context switch, ready queue, PIT-driven preemption)
 - ELF executable loader (PT_LOAD segments into a process address space)
-- Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `time`, `uptime`, `free`
+- `exec` runs ELF binaries from disk in ring 3 and returns to the shell when they exit
+- Kernel heap and VGA mappings live in the higher half, valid in every address space
+- Sample user program (`user/hello.c`) built by `make user`, installed by `make disk`
+- Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `exec`, `time`, `uptime`, `free`
 
 ---
 
@@ -45,9 +48,10 @@ Active development.
 **Upcoming work (roughly in order):**
 
 **Near term**
-- Wire the scheduler up to actually run user processes
-- `exec` shell command to load and run ELF binaries from disk
-- Proper process exit and cleanup in `sys_exit`
+- `sys_read` so user programs can take keyboard input
+- Background processes — wire the round-robin scheduler so multiple
+  processes can run concurrently instead of `exec` blocking the shell
+- More syscalls (sleep, open/read/write files)
 
 **Medium term**
 - VFS layer abstracting FAT32 behind a unified file interface
@@ -159,7 +163,8 @@ i686-elf-gcc --version
 ```bash
 make        # Compile and link everything
 make iso    # Create the bootable ISO
-make disk   # Create a fresh FAT32 disk.img for QEMU
+make user   # Build the sample user program (user/hello.elf)
+make disk   # Create a fresh FAT32 disk.img with HELLO.ELF installed
 make clean  # Remove all build artifacts
 ```
 

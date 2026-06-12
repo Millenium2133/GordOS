@@ -8,3 +8,5 @@ idt_flush:
 	ret
 
 .size idt_flush, . - idt_flush
+
+.section .note.GNU-stack, "", @progbits

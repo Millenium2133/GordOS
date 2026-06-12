@@ -7,7 +7,10 @@
 
 #define VGA_WIDTH	80
 #define VGA_HEIGHT	25
-#define VGA_MEMORY	0xB8000
+// Higher-half mapping of the VGA text buffer (phys 0xB8000). The
+// higher half exists in every address space, so the terminal keeps
+// working while a user process's page directory is loaded.
+#define VGA_MEMORY	0xC00B8000
 
 static size_t terminal_row;
 static size_t terminal_column;
