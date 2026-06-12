@@ -1,0 +1,40 @@
+# Build and boot-test GordOS on every push and pull request.
+#
+# CI doesn't have the i686-elf cross-compiler, so it builds with the
+# host gcc in 32-bit freestanding mode (-m32 -ffreestanding). That's a
+# faithful proxy: same code model, same warnings. The boot test then
+# runs the real ISO in QEMU and checks serial output, including
+# executing a ring-3 user program and recovering from a user crash.
+
+name: Build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-boot-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-multilib mtools dosfstools qemu-utils \
+            qemu-system-x86 grub-pc-bin grub-common xorriso
+
+      - name: Build kernel and ISO
+        run: |
+          make CC="gcc -m32 -fno-pie -fno-stack-protector" \
+               AS="as --32" \
+               LD="gcc -m32 -no-pie" \
+               iso
+
+      - name: Build user programs and disk image
+        run: |
+          make CC="gcc -m32 -fno-pie -no-pie -fno-stack-protector" disk
+
+      - name: Boot test in QEMU
+        run: tools/boot-test.sh

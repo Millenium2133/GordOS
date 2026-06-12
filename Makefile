@@ -23,6 +23,7 @@ OBJS = \
 	drivers/ata.o \
 	drivers/pit.o \
 	drivers/rtc.o \
+	drivers/serial.o \
 	\
 	display/vga.o \
 	display/splash.o \
@@ -39,6 +40,7 @@ OBJS = \
 	kernel/shell.o \
 	kernel/syscall.o \
 	kernel/usermode.o \
+	kernel/usermode_asm.o \
 	kernel/process.o \
 	kernel/scheduler.o \
 	kernel/scheduler_asm.o \
@@ -57,21 +59,27 @@ iso: GordOS
 	cp grub.cfg isodir/boot/grub/grub.cfg
 	grub-mkrescue -o GordOS.iso isodir
 
-disk:
+disk: user
 	qemu-img create -f raw disk.img 64M
 	mkfs.fat -F 32 disk.img
+	mcopy -i disk.img user/hello.elf ::HELLO.ELF
+	mcopy -i disk.img user/echo.elf ::ECHO.ELF
+	mcopy -i disk.img user/files.elf ::FILES.ELF
+	mcopy -i disk.img user/crash.elf ::CRASH.ELF
 
 run: GordOS.iso
 	@test -f disk.img || (echo "ERROR: disk.img not found, run 'make disk' first" && exit 1)
 	qemu-system-i386 -boot order=d -rtc base=localtime \
+		-serial stdio \
 		-cdrom GordOS.iso \
 		-drive file=disk.img,format=raw,if=ide,index=0
 
 clean:
 	rm -rf *.o GordOS GordOS.iso isodir/ disk.img
 	rm -rf cpu/*.o drivers/*.o display/*.o lib/*.o memory/*.o fs/*.o kernel/*.o
+	rm -rf user/*.elf
 
-.PHONY: clean iso disk run
+.PHONY: clean iso disk run user
 
 # +------------------+
 # + Boot             +
@@ -90,7 +98,7 @@ cpu/gdt.o: cpu/gdt.c cpu/gdt.h
 cpu/gdt_flush.o: cpu/gdt_flush.s
 	$(AS) cpu/gdt_flush.s -o cpu/gdt_flush.o
 
-cpu/idt.o: cpu/idt.c cpu/idt.h drivers/pic.h
+cpu/idt.o: cpu/idt.c cpu/idt.h drivers/pic.h kernel/process.h
 	$(CC) $(CFLAGS) -c cpu/idt.c -o cpu/idt.o
 
 cpu/idt_flush.o: cpu/idt_flush.s
@@ -106,7 +114,8 @@ cpu/isr.o: cpu/isr.s
 drivers/pic.o: drivers/pic.c drivers/pic.h
 	$(CC) $(CFLAGS) -c drivers/pic.c -o drivers/pic.o
 
-drivers/keyboard.o: drivers/keyboard.c drivers/keyboard.h cpu/idt.h drivers/pic.h kernel/shell.h
+drivers/keyboard.o: drivers/keyboard.c drivers/keyboard.h cpu/idt.h drivers/pic.h \
+                    kernel/shell.h kernel/process.h
 	$(CC) $(CFLAGS) -c drivers/keyboard.c -o drivers/keyboard.o
 
 drivers/ata.o: drivers/ata.c drivers/ata.h drivers/pic.h
@@ -118,11 +127,14 @@ drivers/pit.o: drivers/pit.c drivers/pit.h drivers/pic.h cpu/idt.h kernel/schedu
 drivers/rtc.o: drivers/rtc.c drivers/rtc.h drivers/pic.h
 	$(CC) $(CFLAGS) -c drivers/rtc.c -o drivers/rtc.o
 
+drivers/serial.o: drivers/serial.c drivers/serial.h drivers/pic.h
+	$(CC) $(CFLAGS) -c drivers/serial.c -o drivers/serial.o
+
 # +------------------+
 # + Display          +
 # +------------------+
 
-display/vga.o: display/vga.c display/vga.h lib/string.h drivers/pic.h
+display/vga.o: display/vga.c display/vga.h lib/string.h drivers/pic.h drivers/serial.h
 	$(CC) $(CFLAGS) -c display/vga.c -o display/vga.o
 
 display/splash.o: display/splash.c display/splash.h display/vga.h
@@ -166,16 +178,21 @@ kernel/kernel.o: kernel/kernel.c cpu/gdt.h cpu/idt.h drivers/pic.h \
 	$(CC) $(CFLAGS) -c kernel/kernel.c -o kernel/kernel.o
 
 kernel/shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h \
-                drivers/rtc.h drivers/pit.h fs/fat32.h memory/pmm.h memory/kmalloc.h
+                drivers/rtc.h drivers/pit.h fs/fat32.h memory/pmm.h memory/kmalloc.h \
+                kernel/process.h kernel/elf.h memory/paging.h drivers/keyboard.h
 	$(CC) $(CFLAGS) -c kernel/shell.c -o kernel/shell.o
 
-kernel/syscall.o: kernel/syscall.c kernel/syscall.h cpu/idt.h kernel/process.h
+kernel/syscall.o: kernel/syscall.c kernel/syscall.h cpu/idt.h kernel/process.h \
+                  drivers/keyboard.h drivers/pit.h fs/fat32.h
 	$(CC) $(CFLAGS) -c kernel/syscall.c -o kernel/syscall.o
 
 kernel/usermode.o: kernel/usermode.c kernel/usermode.h cpu/gdt.h
 	$(CC) $(CFLAGS) -c kernel/usermode.c -o kernel/usermode.o
 
-kernel/process.o: kernel/process.c kernel/process.h memory/paging.h memory/kmalloc.h
+kernel/usermode_asm.o: kernel/usermode.s
+	$(AS) kernel/usermode.s -o kernel/usermode_asm.o
+
+kernel/process.o: kernel/process.c kernel/process.h memory/paging.h memory/kmalloc.h cpu/gdt.h
 	$(CC) $(CFLAGS) -c kernel/process.c -o kernel/process.o
 
 kernel/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/process.h memory/paging.h cpu/gdt.h
@@ -186,3 +203,25 @@ kernel/scheduler_asm.o: kernel/scheduler.s
 
 kernel/elf.o: kernel/elf.c kernel/elf.h kernel/process.h memory/paging.h memory/pmm.h lib/string.h
 	$(CC) $(CFLAGS) -c kernel/elf.c -o kernel/elf.o
+
+# +------------------+
+# + User Programs    +
+# +------------------+
+
+user: user/hello.elf user/echo.elf user/files.elf user/crash.elf
+
+user/hello.elf: user/hello.c user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
+	      -T user/linker.ld user/hello.c -o user/hello.elf
+
+user/echo.elf: user/echo.c user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
+	      -T user/linker.ld user/echo.c -o user/echo.elf
+
+user/files.elf: user/files.c user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
+	      -T user/linker.ld user/files.c -o user/files.elf
+
+user/crash.elf: user/crash.c user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
+	      -T user/linker.ld user/crash.c -o user/crash.elf

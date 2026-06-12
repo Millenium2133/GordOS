@@ -6,9 +6,9 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 
 ---
 
-## Milestone Reached: User Mode (Ring 3)
+## Milestone Reached: Running User Programs From Disk
 
-GordOS can now execute code in ring 3 (user mode) and make syscalls back into the kernel via `int 0x80`. The full privilege separation between kernel space and user space is working — a user process ran, printed a message through the syscall interface, and exited cleanly. This is the foundation for real process isolation and multitasking.
+GordOS can now load an ELF executable from the FAT32 disk and run it as a real user process: the `exec` shell command reads the binary, creates a process with its own page directory and kernel stack, loads the `PT_LOAD` segments, maps a user stack, and drops to ring 3. When the program calls `sys_exit`, control returns cleanly to the shell. A sample user program lives in `user/hello.c` and is copied onto the disk image by `make disk` — try `exec HELLO.ELF`.
 
 ---
 
@@ -28,13 +28,18 @@ GordOS can now execute code in ring 3 (user mode) and make syscalls back into th
 - Page fault handler that prints the faulting address and error code
 - PIT driver at 1000Hz (timer_ticks, timer_sleep)
 - RTC driver reading real wall-clock time from CMOS
-- Syscall interface via `int 0x80` (sys_write, sys_exit, sys_getpid) with return values in `eax`
+- Syscall interface via `int 0x80` (write, exit, getpid, read, sleep, readfile, writefile) with return values in `eax`
+- Faulting user processes are killed and control returns to the shell
+- COM1 serial debug console — all terminal output is mirrored (`qemu -serial stdio` or a serial cable on real hardware)
 - Ring 3 GDT segments, TSS, and `jump_to_usermode`
 - `paging_map_page` with user bit support for mapping user-accessible pages
 - Process structures with per-process page directories and kernel stacks
 - Round-robin scheduler scaffolding (context switch, ready queue, PIT-driven preemption)
 - ELF executable loader (PT_LOAD segments into a process address space)
-- Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `time`, `uptime`, `free`
+- `exec` runs ELF binaries from disk in ring 3 and returns to the shell when they exit
+- Kernel heap and VGA mappings live in the higher half, valid in every address space
+- Sample user programs (`user/hello.c`, interactive `user/echo.c`, file I/O `user/files.c`) built by `make user`, installed by `make disk`
+- Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `exec`, `time`, `uptime`, `free`
 
 ---
 
@@ -45,13 +50,12 @@ Active development.
 **Upcoming work (roughly in order):**
 
 **Near term**
-- Wire the scheduler up to actually run user processes
-- `exec` shell command to load and run ELF binaries from disk
-- Proper process exit and cleanup in `sys_exit`
+- Background processes — wire the round-robin scheduler so multiple
+  processes can run concurrently instead of `exec` blocking the shell
+- File-descriptor based file syscalls (open/read/write/close)
 
 **Medium term**
 - VFS layer abstracting FAT32 behind a unified file interface
-- Serial port driver (useful for real hardware debugging)
 - FAT32 long filename (LFN) support
 
 **Long term**
@@ -109,8 +113,12 @@ Active development.
 | Number | Name | Description |
 | :--- | :--- | :--- |
 | 0 | `sys_write` | Write buffer to terminal |
-| 1 | `sys_exit` | Terminate process |
+| 1 | `sys_exit` | Terminate process, return to shell |
 | 2 | `sys_getpid` | Get current process ID |
+| 3 | `sys_read` | Read keyboard input (blocks until at least 1 byte) |
+| 4 | `sys_sleep` | Sleep for N milliseconds |
+| 5 | `sys_readfile` | Read a whole file from disk into a buffer |
+| 6 | `sys_writefile` | Write a buffer to a file, replacing its contents |
 
 ### Compilation Flags
 
@@ -159,9 +167,18 @@ i686-elf-gcc --version
 ```bash
 make        # Compile and link everything
 make iso    # Create the bootable ISO
-make disk   # Create a fresh FAT32 disk.img for QEMU
+make user   # Build the sample user programs (user/*.elf)
+make disk   # Create a fresh FAT32 disk.img with the user programs installed
 make clean  # Remove all build artifacts
 ```
+
+### Automated boot test
+
+`tools/boot-test.sh` boots the ISO headlessly in QEMU, types
+`exec HELLO.ELF` and `exec CRASH.ELF` into the shell through the QEMU
+monitor, and checks the serial log for the expected output (user
+program ran in ring 3, crashed program was killed cleanly). CI runs it
+on every push.
 
 ---
 

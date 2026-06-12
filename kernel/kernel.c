@@ -23,12 +23,14 @@
 #include "process.h"
 #include "scheduler.h"
 #include "elf.h"
+#include "serial.h"
 
 
 #define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
 
 void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 {
+	serial_init(); // first, so all terminal output gets mirrored
 	terminal_initialize();
 	if (magic != MULTIBOOT_BOOTLOADER_MAGIC)
 		terminal_writestring("WARNING: bad multiboot magic, memory map may be invalid\n");
@@ -64,12 +66,6 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	else
 		terminal_writestring("kmalloc FAILED\n");
 
-	splash_show();
-	shell_init();
-
-	keyboard_init();
-	pit_init(1000);
-
 	// Smoke test: create a process with mapped code/stack pages,
 	// then tear it down again so nothing is leaked
 	process_t* proc = process_create();
@@ -93,6 +89,12 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	{
 		terminal_writestring("Process creation FAILED\n");
 	}
+
+	splash_show();
+	shell_init();
+
+	keyboard_init();
+	pit_init(1000);
 
 	asm volatile("sti");
 

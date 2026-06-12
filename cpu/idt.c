@@ -1,16 +1,17 @@
 #include "idt.h"
 #include "pic.h"
+#include "process.h"
 
-static void (*irq_handlers[16])(struct registers) = {0};
+static void (*irq_handlers[16])(struct registers*) = {0};
 
-void irq_register(int irq, void (*handler)(struct registers))
+void irq_register(int irq, void (*handler)(struct registers*))
 {
 	irq_handlers[irq] = handler;
 }
 
-void irq_handler(struct registers regs)
+void irq_handler(struct registers* regs)
 {
-	int irq = regs.int_no - 32;
+	int irq = regs->int_no - 32;
 
 	// Acknowledge the PIC before running the handler. Interrupts stay
 	// disabled until iret, so this can't nest — but it means a handler
@@ -168,12 +169,12 @@ static const char *exception_names[] = {
 	"Reserved"
 };
 
-void isr_handler(struct registers regs)
+void isr_handler(struct registers* regs)
 {
 	terminal_writestring("EXCEPTION: ");
-	terminal_writestring(exception_names[regs.int_no]);
-	
-	if (regs.int_no == 14)
+	terminal_writestring(exception_names[regs->int_no]);
+
+	if (regs->int_no == 14)
 	{
 		uint32_t faulting_address;
 		asm volatile("mov %%cr2, %0" : "=r"(faulting_address));
@@ -187,11 +188,21 @@ void isr_handler(struct registers regs)
 		}
 
 		// Print error code
-		terminal_writestring(regs.err_code & 1 ? " (protection)" : " (not present)");
-		terminal_writestring(regs.err_code & 2 ? " write" : " read");
+		terminal_writestring(regs->err_code & 1 ? " (protection)" : " (not present)");
+		terminal_writestring(regs->err_code & 2 ? " write" : " read");
 	}
 
 	terminal_putchar('\n');
+
+	// If the fault came from ring 3, kill the offending process and
+	// return to the shell instead of taking the whole system down
+	if ((regs->cs & 3) == 3 && current_process)
+	{
+		terminal_writestring("User process killed\n");
+		process_exit(); // never returns
+	}
+
+	// Kernel fault: nothing sane to do, halt
 	for (;;)
 	{
 		asm volatile("hlt");

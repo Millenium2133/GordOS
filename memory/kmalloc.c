@@ -1,5 +1,6 @@
 #include "kmalloc.h"
 #include "pmm.h"
+#include "paging.h"
 #include <stdint.h>
 
 // Header that sits in front of every allocation
@@ -19,9 +20,15 @@ static block_header_t* new_block(size_t size)
 {
     size_t pages_needed = (size + HEADER_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    block_header_t* block = pmm_alloc_contiguous(pages_needed);
-    if (!block)
+    void* phys = pmm_alloc_contiguous(pages_needed);
+    if (!phys)
         return 0;
+
+    // Use the higher-half mapping of this memory, not the identity
+    // mapping. The higher half (0xC0000000+) is present in every
+    // address space, so heap pointers stay valid even while a user
+    // process's page directory is loaded.
+    block_header_t* block = (block_header_t*)((uint32_t)phys + KERNEL_VIRTUAL_BASE);
 
     block->size = (pages_needed * PAGE_SIZE) - HEADER_SIZE;
     block->free = 0;

@@ -6,6 +6,10 @@
 #include "rtc.h"
 #include "pmm.h"
 #include "pit.h"
+#include "process.h"
+#include "elf.h"
+#include "paging.h"
+#include "keyboard.h"
 
 #define INPUT_BUFFER_SIZE 256
 
@@ -66,6 +70,7 @@ static void cmd_help(void)
 	terminal_writestring("	rm		- Delete a file\n");
 	terminal_writestring("	write	- Write text to file\n");
 	terminal_writestring("	rename	- Rename a file\n");
+	terminal_writestring("	exec	- Run an ELF program in user mode\n");
 	terminal_writestring("	time	- Show current date and time\n");
 	terminal_writestring("	uptime	- Show time since boot\n");
 	terminal_writestring("	free	- Show free memory\n");
@@ -336,6 +341,79 @@ static void cmd_time(void)
 	terminal_putchar('\n');
 }
 
+// exec — load an ELF executable from disk and run it in user mode.
+// Blocks until the program calls sys_exit.
+#define USER_STACK_PAGE 0xBFFFF000
+#define USER_STACK_TOP  0xBFFFFFF0
+
+static void cmd_exec(const char* args)
+{
+	if (!args || *args == '\0')
+	{
+		terminal_writestring("Usage: exec FILENAME\n");
+		return;
+	}
+
+	// Read the ELF image into memory (max 64KB for now)
+	void* buf = kmalloc(65536);
+	if (!buf)
+	{
+		terminal_writestring("exec: out of memory\n");
+		return;
+	}
+
+	uint32_t size = 0;
+	if (fat32_read_file(args, buf, 65536, &size) != 0)
+	{
+		terminal_writestring("exec: file not found\n");
+		kfree(buf);
+		return;
+	}
+
+	process_t* proc = process_create();
+	if (!proc)
+	{
+		terminal_writestring("exec: cannot create process\n");
+		kfree(buf);
+		return;
+	}
+
+	uint32_t entry = elf_load(proc, buf, size);
+	kfree(buf);
+
+	if (entry == 0)
+	{
+		terminal_writestring("exec: not a valid ELF executable\n");
+		process_destroy(proc);
+		return;
+	}
+
+	// Map one page of user stack just below the kernel half
+	void* stack_phys = pmm_alloc_page();
+	if (!stack_phys)
+	{
+		terminal_writestring("exec: out of memory\n");
+		process_destroy(proc);
+		return;
+	}
+	if (paging_map_page_in(proc->page_directory, USER_STACK_PAGE,
+	                       (uint32_t)stack_phys,
+	                       PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER) != 0)
+	{
+		terminal_writestring("exec: out of page tables\n");
+		pmm_free_page(stack_phys);
+		process_destroy(proc);
+		return;
+	}
+
+	// Don't let the program see keystrokes from before it started
+	keyboard_flush();
+
+	// Runs the program in ring 3, returns when it exits
+	process_run(proc, entry, USER_STACK_TOP);
+	process_destroy(proc);
+}
+
 // uptime
 static void cmd_uptime(void)
 {
@@ -426,6 +504,9 @@ static void shell_execute(const char* input)
 	else if (is_command(input, "time"))
 		cmd_time();
 
+	else if (is_command(input, "exec"))
+		cmd_exec(get_args(input, 4));
+
 	else if (is_command(input, "uptime"))
 		cmd_uptime();
 
@@ -468,6 +549,12 @@ static void clear_input_line(void)
 
 void shell_handle_char(char c)
 {
+	// While a user process is running, the shell is suspended inside
+	// cmd_exec — running another command from this IRQ context would
+	// clobber the exec state, so drop the input
+	if (current_process)
+		return;
+
 	if (c == '\n')
 	{
 		terminal_putchar('\n');
@@ -564,7 +651,7 @@ void shell_handle_char(char c)
 			static const char* commands[] = {
 				"help", "clear", "echo", "about", "ls", "pwd",
 				"cat", "touch", "mkdir", "cd", "rm", "write",
-				"rename", "time", "uptime", "free", 0
+				"rename", "time", "uptime", "free", "exec", 0
 			};
 			for (int ci = 0; commands[ci] != 0 && count < 16; ci++)
 			{

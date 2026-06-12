@@ -1,27 +1,53 @@
 #include "paging.h"
 #include "pmm.h"
 
-#define KERNEL_VIRTUAL_BASE 0xC0000000
-
 // The boot page directory is set up in boot.s
 extern uint32_t boot_page_directory[1024];
 
-// Pre-allocated page tables for user space mappings.
-static uint32_t user_page_tables[32][1024] __attribute__((aligned(4096)));
-static int next_table = 0;
+// Pre-allocated page tables for user space mappings, managed as a
+// free list so tables return to the pool when an address space is
+// destroyed (otherwise ~10 exec cycles would exhaust it).
+#define USER_TABLE_POOL 32
+static uint32_t user_page_tables[USER_TABLE_POOL][1024] __attribute__((aligned(4096)));
+static uint32_t* table_free_list[USER_TABLE_POOL];
+static int free_table_count = 0;
 
 static uint32_t* alloc_page_table(void)
 {
-	if (next_table >= 32)
+	if (free_table_count == 0)
 		return 0;
-	return user_page_tables[next_table++];
-	
+
+	uint32_t* table = table_free_list[--free_table_count];
+
+	// Recycled tables hold stale entries — hand out zeroed memory
+	for (int i = 0; i < 1024; i++)
+		table[i] = 0;
+
+	return table;
+}
+
+// Return a table to the pool. Ignores pointers that didn't come from
+// the pool (e.g. kernel tables copied from the boot directory).
+static void free_page_table(uint32_t* table)
+{
+	uint32_t addr  = (uint32_t)table;
+	uint32_t start = (uint32_t)user_page_tables;
+	uint32_t end   = start + sizeof(user_page_tables);
+
+	if (addr < start || addr >= end)
+		return;
+
+	if (free_table_count < USER_TABLE_POOL)
+		table_free_list[free_table_count++] = table;
 }
 
 void paging_init(void)
 {
-	// Paging is already set up in boot.s before kernel_main runs
-	// This function is kept for future higher-level mapping helpers
+	// Paging itself is already set up in boot.s before kernel_main
+	// runs; here we just stock the user page table pool
+	free_table_count = 0;
+	for (int i = 0; i < USER_TABLE_POOL; i++)
+		table_free_list[free_table_count++] = user_page_tables[i];
 }
 
 // Map a physical page to a virtual address with given flags.
@@ -99,8 +125,9 @@ uint32_t* paging_create_address_space(void)
     return new_dir;
 }
 
-// Destroy an address space and free its physical pages.
-// Does NOT free kernel mappings. those are shared.
+// Destroy an address space: free its physical pages and return its
+// page tables (and the directory itself) to the pool.
+// Does NOT free kernel mappings (entries 768+). those are shared.
 void paging_destroy_address_space(uint32_t* page_directory)
 {
     if (!page_directory)
@@ -120,13 +147,18 @@ void paging_destroy_address_space(uint32_t* page_directory)
                 if (table[j] & PAGE_PRESENT)
                     pmm_free_page((void*)(table[j] & ~0xFFF));
             }
+
+            free_page_table(table);
+            page_directory[i] = 0;
         }
     }
 
+    free_page_table(page_directory);
 }
 
 // Map a page in a specific address space (not necessarily the current one).
-void paging_map_page_in(uint32_t* page_directory, uint32_t virt, uint32_t phys, uint32_t flags)
+// Returns 0 on success, -1 if no page table could be allocated.
+int paging_map_page_in(uint32_t* page_directory, uint32_t virt, uint32_t phys, uint32_t flags)
 {
     uint32_t dir_index   = virt >> 22;
     uint32_t table_index = (virt >> 12) & 0x3FF;
@@ -135,7 +167,7 @@ void paging_map_page_in(uint32_t* page_directory, uint32_t virt, uint32_t phys, 
     {
         uint32_t* new_table = alloc_page_table();
         if (!new_table)
-            return;
+            return -1;
 
         uint32_t new_table_phys = (uint32_t)new_table - KERNEL_VIRTUAL_BASE;
         page_directory[dir_index] = new_table_phys | PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER;
@@ -148,6 +180,7 @@ void paging_map_page_in(uint32_t* page_directory, uint32_t virt, uint32_t phys, 
     uint32_t* page_table = (uint32_t*)(table_phys + KERNEL_VIRTUAL_BASE);
 
     page_table[table_index] = (phys & ~0xFFF) | flags | PAGE_PRESENT;
+    return 0;
 }
 
 // Switch the CPU to use a different address space.
@@ -156,4 +189,10 @@ void paging_switch_address_space(uint32_t* page_directory)
 {
     uint32_t phys = (uint32_t)page_directory - KERNEL_VIRTUAL_BASE;
     asm volatile("mov %0, %%cr3" : : "r"(phys) : "memory");
+}
+
+// Switch back to the kernel's own (boot) address space.
+void paging_switch_to_kernel(void)
+{
+    paging_switch_address_space(boot_page_directory);
 }

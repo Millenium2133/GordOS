@@ -129,7 +129,12 @@ irq_common:
 	mov %ax, %fs
 	mov %ax, %gs
 
+	# Pass a POINTER to the saved frame. Passing the frame by value
+	# lets the compiler use the parameter area as scratch space,
+	# corrupting the saved registers before they're restored below.
+	push %esp
 	call irq_handler
+	add $4, %esp
 
 	pop %eax
 	mov %ax, %ds
@@ -156,7 +161,10 @@ isr_common:
 	mov %ax, %fs
 	mov %ax, %gs
 
+	# Pointer to the saved frame, see irq_common
+	push %esp
 	call isr_handler
+	add $4, %esp
 
 	pop %eax
 	mov %ax, %ds
@@ -167,3 +175,5 @@ isr_common:
 	popa
 	add $8, %esp
 	iret
+
+.section .note.GNU-stack, "", @progbits

@@ -51,8 +51,14 @@ uint32_t elf_load(process_t* proc, void* elf_data, uint32_t elf_size)
                 return 0;
 
             uint32_t virt = vaddr + page * 0x1000;
-            paging_map_page_in(proc->page_directory, virt, (uint32_t)phys,
-                               PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER);
+            if (paging_map_page_in(proc->page_directory, virt, (uint32_t)phys,
+                                   PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER) != 0)
+            {
+                // Page never made it into the address space, so the
+                // caller's process_destroy won't free it — do it here
+                pmm_free_page(phys);
+                return 0;
+            }
 
             paging_map_page(SCRATCH_VIRT, (uint32_t)phys, PAGE_PRESENT | PAGE_WRITEABLE);
 

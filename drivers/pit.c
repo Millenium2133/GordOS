@@ -10,7 +10,7 @@
 static volatile uint32_t ticks = 0;
 static uint32_t tick_rate = 0;
 
-static void pit_handler(struct registers regs)
+static void pit_handler(struct registers* regs)
 {
 	(void)regs;
 	ticks++;

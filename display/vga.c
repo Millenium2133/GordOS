@@ -4,10 +4,14 @@
 #include "vga.h"
 #include "string.h"
 #include "pic.h"
+#include "serial.h"
 
 #define VGA_WIDTH	80
 #define VGA_HEIGHT	25
-#define VGA_MEMORY	0xB8000
+// Higher-half mapping of the VGA text buffer (phys 0xB8000). The
+// higher half exists in every address space, so the terminal keeps
+// working while a user process's page directory is loaded.
+#define VGA_MEMORY	0xC00B8000
 
 static size_t terminal_row;
 static size_t terminal_column;
@@ -63,6 +67,11 @@ void terminal_backspace(void)
 	terminal_column--;
 	terminal_putentryat(' ', terminal_color, terminal_column, terminal_row);
 	update_cursor();
+
+	// Erase on the serial console too
+	serial_putchar('\b');
+	serial_putchar(' ');
+	serial_putchar('\b');
 }
 
 static void terminal_scroll(void)
@@ -97,6 +106,9 @@ void terminal_cursor_left(void)
 
 void terminal_putchar(char c)
 {
+	// Mirror all terminal output to the serial debug console
+	serial_putchar(c);
+
 	if (c == '\n')
 	{
 		terminal_column = 0;
