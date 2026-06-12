@@ -1,8 +1,7 @@
+# Build artifacts
 *.o
-*.bin
-*.iso
-a.out
-isodir/
+*.elf
+GordOS
+GordOS.iso
 disk.img
-CONTEXT.md
-.vscode/
+isodir/
