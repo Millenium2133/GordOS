@@ -5,10 +5,9 @@
 #include "string.h"
 
 // Temporary kernel-side window used to copy segment data into freshly
-// allocated physical pages. This sits just above the kernel's 4MB
-// boot mapping (0xC0000000-0xC0400000) so remapping it never clobbers
-// an existing kernel mapping.
-#define SCRATCH_VIRT 0xC0400000
+// allocated physical pages (table pre-created in paging_init so it
+// exists in every address space)
+#define SCRATCH_VIRT ELF_SCRATCH_VIRT
 
 uint32_t elf_load(process_t* proc, void* elf_data, uint32_t elf_size)
 {

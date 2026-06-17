@@ -41,8 +41,8 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	pmm_init(mbi);
 	paging_init();
 	kmalloc_init();
-	process_init();
-	scheduler_init();
+	scheduler_init();   // must precede process_init: it registers the
+	process_init();     // kernel task (pid 0) with the scheduler
 	terminal_writestring("PMM Initialized\n");
 
 	if (ata_init() == 0)
@@ -66,29 +66,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	else
 		terminal_writestring("kmalloc FAILED\n");
 
-	// Smoke test: create a process with mapped code/stack pages,
-	// then tear it down again so nothing is leaked
-	process_t* proc = process_create();
-	if (proc)
-	{
-		void* code_phys  = pmm_alloc_page();
-		void* stack_phys = pmm_alloc_page();
-
-		paging_map_page_in(proc->page_directory, 0x00100000,
-		                   (uint32_t)code_phys,
-		                   PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER);
-
-		paging_map_page_in(proc->page_directory, 0xBFFFF000,
-		                   (uint32_t)stack_phys,
-		                   PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER);
-
-		process_destroy(proc);
-		terminal_writestring("Process subsystem OK\n");
-	}
-	else
-	{
-		terminal_writestring("Process creation FAILED\n");
-	}
+	terminal_writestring("Scheduler ready\n");
 
 	splash_show();
 	shell_init();
@@ -98,6 +76,12 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 
 	asm volatile("sti");
 
+	// This is the kernel task (pid 0): reap exited processes, then
+	// idle. The shell runs from the keyboard IRQ; user processes are
+	// time-sliced in by the scheduler.
 	for (;;)
+	{
+		process_reap();
 		asm volatile("hlt");
+	}
 }

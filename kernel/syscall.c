@@ -127,18 +127,15 @@ static int sys_writefile(const char* upath, const char* buf, uint32_t len)
     return fat32_write_file(path, buf, len);
 }
 
-// sys_exit: tear down the calling process and hand control back to
-// whoever started it (the shell's exec command)
+// sys_exit: tear down the calling process. The scheduler switches to
+// another task and the kernel task's reaper frees this one's memory.
 static void sys_exit(int code)
 {
     (void)code;
 
-    if (current_process)
-        process_exit(); // never returns
+    process_exit(); // never returns for a real process
 
-    // No process context (exit called from the kernel itself):
-    // park with interrupts on so the shell keeps running
-    terminal_writestring("Process exited\n");
+    // Only reached if somehow called outside a process context
     asm volatile("sti");
     for (;;)
         asm volatile("hlt");

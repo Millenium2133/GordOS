@@ -60,6 +60,7 @@ boot_page_table:
 .align 16
 stack_bottom:
     .skip 65536
+.global stack_top
 stack_top:
 
 .section .text

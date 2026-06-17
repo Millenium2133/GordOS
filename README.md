@@ -6,9 +6,16 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 
 ---
 
-## Milestone Reached: Running User Programs From Disk
+## Milestone Reached: Preemptive Multitasking
 
-GordOS can now load an ELF executable from the FAT32 disk and run it as a real user process: the `exec` shell command reads the binary, creates a process with its own page directory and kernel stack, loads the `PT_LOAD` segments, maps a user stack, and drops to ring 3. When the program calls `sys_exit`, control returns cleanly to the shell. A sample user program lives in `user/hello.c` and is copied onto the disk image by `make disk` — try `exec HELLO.ELF`.
+GordOS now runs multiple processes concurrently. A PIT-driven round-robin scheduler time-slices between a kernel task (pid 0, which also hosts the shell and reaps exited processes), foreground programs, and background programs — each in its own address space, switched via a saved kernel context per process.
+
+- `exec PROG` runs a program in the **foreground**: it owns the keyboard and the shell waits for it to exit before showing the next prompt.
+- `bg PROG` runs a program in the **background**: it is time-sliced alongside the shell, which stays fully interactive. `ps` lists processes, `kill PID` terminates one.
+
+Try `bg COUNTER.ELF` and keep typing — `ps`, `free`, even launching more programs — while it counts in the background. A faulting process (or `kill`) is torn down and its memory reclaimed without disturbing the rest of the system.
+
+Earlier milestone (still true): ELF executables are loaded from the FAT32 disk — `exec` reads the binary, builds a process with its own page directory and kernel stack, loads the `PT_LOAD` segments, maps a user stack, and drops to ring 3.
 
 ---
 
@@ -35,13 +42,14 @@ GordOS can now load an ELF executable from the FAT32 disk and run it as a real u
 - Ring 3 GDT segments, TSS, and `jump_to_usermode`
 - `paging_map_page` with user bit support for mapping user-accessible pages
 - Process structures with per-process page directories and kernel stacks
-- Round-robin scheduler scaffolding (context switch, ready queue, PIT-driven preemption)
+- Preemptive round-robin scheduler: PIT-driven context switches between a kernel task, foreground, and background processes
+- Foreground (`exec`) and background (`bg`) execution, with `ps` and `kill`
+- Process reaping: exited and killed processes are freed by the kernel task with no memory leak
 - ELF executable loader (PT_LOAD segments into a process address space)
-- `exec` runs ELF binaries from disk in ring 3 and returns to the shell when they exit
 - Kernel heap and VGA mappings live in the higher half, valid in every address space
-- Sample user programs (`user/hello.c`, interactive `user/echo.c`, file I/O `user/files.c`) built by `make user`, installed by `make disk`
+- Sample user programs (`user/hello.c`, interactive `user/echo.c`, file I/O `user/files.c`, background `user/counter.c`) built by `make user`, installed by `make disk`
 - `fasterfetch` — a neofetch-style system info screen (CPU brand via CPUID, live memory and uptime, colour palette)
-- Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `exec`, `time`, `uptime`, `free`, `fasterfetch`, `reboot`
+- Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `exec`, `bg`, `ps`, `kill`, `time`, `uptime`, `free`, `fasterfetch`, `reboot`
 
 ---
 
@@ -52,9 +60,9 @@ Active development.
 **Upcoming work (roughly in order):**
 
 **Near term**
-- Background processes — wire the round-robin scheduler so multiple
-  processes can run concurrently instead of `exec` blocking the shell
+- `fork`/`exec` separation and `wait`, so processes can spawn children
 - File-descriptor based file syscalls (open/read/write/close)
+- Sleeping/blocking instead of busy-waiting in `sys_read`
 
 **Medium term**
 - VFS layer abstracting FAT32 behind a unified file interface

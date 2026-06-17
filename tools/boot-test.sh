@@ -41,7 +41,7 @@ while ! grep -q 'GordOS/>' "$SERIAL_LOG" 2>/dev/null; do
 done
 
 # Type commands into the guest via QEMU monitor sendkey
-python3 - "$MON_SOCK" "fasterfetch" "exec HELLO.ELF" "exec CRASH.ELF" << 'EOF'
+python3 - "$MON_SOCK" "fasterfetch" "exec HELLO.ELF" "exec CRASH.ELF" "bg COUNTER.ELF" "ps" << 'EOF'
 import socket, sys, time
 
 KEYMAP = {' ': 'spc', '.': 'dot', '/': 'slash', '-': 'minus'}
@@ -70,11 +70,15 @@ for line in sys.argv[2:]:
 sock.close()
 EOF
 
-sleep 2
+# Give the background COUNTER.ELF time to finish its run
+sleep 5
 
 status=0
-for expect in 'FAT32 MOUNTED' 'GordOS (i686)' 'Hello from ring 3!' 'User process killed'; do
-    if grep -q "$expect" "$SERIAL_LOG"; then
+# Fixed-string matches (-F): some expectations contain regex
+# metacharacters like '[counter]' that must be taken literally.
+for expect in 'FAT32 MOUNTED' 'GordOS (i686)' 'Hello from ring 3!' 'User process killed' \
+              'running in background' '[counter] tick' '] done'; do
+    if grep -qF "$expect" "$SERIAL_LOG"; then
         echo "PASS: $expect"
     else
         echo "FAIL: missing '$expect'"

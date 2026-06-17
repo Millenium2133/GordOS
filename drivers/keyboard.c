@@ -27,11 +27,12 @@ void keyboard_flush(void)
     kbd_tail = kbd_head;
 }
 
-// Route a decoded character: to the user-input buffer if a process is
-// running, otherwise to the shell
+// Route a decoded character. A foreground process owns the keyboard,
+// so its keystrokes go into the ring buffer for sys_read; otherwise
+// (idle, or only background processes running) they go to the shell.
 static void deliver_char(char c)
 {
-    if (current_process)
+    if (foreground_process)
     {
         // Shell editing keys mean nothing to a user program
         if ((unsigned char)c >= 0x80)

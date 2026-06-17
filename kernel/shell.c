@@ -7,6 +7,7 @@
 #include "pmm.h"
 #include "pit.h"
 #include "process.h"
+#include "scheduler.h"
 #include "elf.h"
 #include "paging.h"
 #include "keyboard.h"
@@ -32,6 +33,9 @@ void terminal_cursor_left(void);
 
 // forward dec from vga.h
 uint8_t vga_entry_color(enum vga_color fg, enum vga_color bg);
+
+// Defined further down, used by the process-exit handler above it
+static void shell_prompt(void);
 
 // ++++++++++++++++++++
 // + String Utilities +
@@ -71,8 +75,10 @@ static void cmd_help(void)
 	terminal_writestring("	rm		- Delete a file\n");
 	terminal_writestring("	write	- Write text to file\n");
 	terminal_writestring("	rename	- Rename a file\n");
-	terminal_writestring("	exec	- Run an ELF program in user mode\n");
-	terminal_writestring("	exec	- Run an ELF program in user mode\n");
+	terminal_writestring("	exec	- Run an ELF program (foreground)\n");
+	terminal_writestring("	bg		- Run an ELF program in the background\n");
+	terminal_writestring("	ps		- List running processes\n");
+	terminal_writestring("	kill	- Terminate a process by PID\n");
 	terminal_writestring("	time	- Show current date and time\n");
 	terminal_writestring("	uptime	- Show time since boot\n");
 	terminal_writestring("	free	- Show free memory\n");
@@ -347,41 +353,51 @@ static void cmd_time(void)
 	terminal_putchar('\n');
 }
 
-// exec — load an ELF executable from disk and run it in user mode.
-// Blocks until the program calls sys_exit.
+// Load an ELF executable from disk and hand it to the scheduler.
+// foreground=1 (exec): the process owns the keyboard and the shell
+// waits for it to exit before showing the next prompt.
+// foreground=0 (bg): the process runs alongside the shell.
+// Returns the new process on success (still valid until this IRQ
+// returns), or 0 on failure.
 #define USER_STACK_PAGE 0xBFFFF000
 #define USER_STACK_TOP  0xBFFFFFF0
 
-static void cmd_exec(const char* args)
+static process_t* start_program(const char* args, int foreground, const char* who)
 {
 	if (!args || *args == '\0')
 	{
-		terminal_writestring("Usage: exec FILENAME\n");
-		return;
+		terminal_writestring(who);
+		terminal_writestring(": usage: ");
+		terminal_writestring(who);
+		terminal_writestring(" FILENAME\n");
+		return 0;
 	}
 
 	// Read the ELF image into memory (max 64KB for now)
 	void* buf = kmalloc(65536);
 	if (!buf)
 	{
-		terminal_writestring("exec: out of memory\n");
-		return;
+		terminal_writestring(who);
+		terminal_writestring(": out of memory\n");
+		return 0;
 	}
 
 	uint32_t size = 0;
 	if (fat32_read_file(args, buf, 65536, &size) != 0)
 	{
-		terminal_writestring("exec: file not found\n");
+		terminal_writestring(who);
+		terminal_writestring(": file not found\n");
 		kfree(buf);
-		return;
+		return 0;
 	}
 
 	process_t* proc = process_create();
 	if (!proc)
 	{
-		terminal_writestring("exec: cannot create process\n");
+		terminal_writestring(who);
+		terminal_writestring(": cannot create process\n");
 		kfree(buf);
-		return;
+		return 0;
 	}
 
 	uint32_t entry = elf_load(proc, buf, size);
@@ -389,35 +405,171 @@ static void cmd_exec(const char* args)
 
 	if (entry == 0)
 	{
-		terminal_writestring("exec: not a valid ELF executable\n");
+		terminal_writestring(who);
+		terminal_writestring(": not a valid ELF executable\n");
 		process_destroy(proc);
-		return;
+		return 0;
 	}
 
 	// Map one page of user stack just below the kernel half
 	void* stack_phys = pmm_alloc_page();
 	if (!stack_phys)
 	{
-		terminal_writestring("exec: out of memory\n");
+		terminal_writestring(who);
+		terminal_writestring(": out of memory\n");
 		process_destroy(proc);
-		return;
+		return 0;
 	}
 	if (paging_map_page_in(proc->page_directory, USER_STACK_PAGE,
 	                       (uint32_t)stack_phys,
 	                       PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER) != 0)
 	{
-		terminal_writestring("exec: out of page tables\n");
+		terminal_writestring(who);
+		terminal_writestring(": out of page tables\n");
 		pmm_free_page(stack_phys);
 		process_destroy(proc);
+		return 0;
+	}
+
+	if (foreground)
+		keyboard_flush(); // don't leak pre-launch keystrokes to the program
+
+	// Add to the scheduler; it will be time-sliced in. process_destroy
+	// is the reaper's job now, not ours.
+	process_start(proc, entry, USER_STACK_TOP, foreground);
+	return proc;
+}
+
+// exec — run a program in the foreground (shell waits for it)
+static void cmd_exec(const char* args)
+{
+	start_program(args, 1, "exec");
+}
+
+// bg — run a program in the background (shell stays interactive)
+static void cmd_bg(const char* args)
+{
+	process_t* proc = start_program(args, 0, "bg");
+	if (proc)
+	{
+		terminal_writestring("[");
+		print_uint(proc->pid);
+		terminal_writestring("] running in background\n");
+	}
+}
+
+// ps — list scheduled processes
+static const char* proc_state_name(uint32_t state)
+{
+	switch (state)
+	{
+		case PROCESS_READY:   return "ready";
+		case PROCESS_RUNNING: return "running";
+		case PROCESS_BLOCKED: return "blocked";
+		case PROCESS_DEAD:    return "dead";
+		default:              return "?";
+	}
+}
+
+static void ps_print_one(process_t* p)
+{
+	print_uint(p->pid);
+	if (p->pid == 0)
+		terminal_writestring("\t-\tkernel\n");
+	else
+	{
+		terminal_writestring("\t");
+		terminal_writestring(p->foreground ? "fg" : "bg");
+		terminal_writestring("\t");
+		terminal_writestring(proc_state_name(p->state));
+		terminal_putchar('\n');
+	}
+}
+
+static void cmd_ps(void)
+{
+	terminal_writestring("PID\tTYPE\tSTATE\n");
+	scheduler_for_each(ps_print_one);
+}
+
+// kill — terminate a process by PID
+static void cmd_kill(const char* args)
+{
+	if (!args || *args == '\0')
+	{
+		terminal_writestring("Usage: kill PID\n");
 		return;
 	}
 
-	// Don't let the program see keystrokes from before it started
-	keyboard_flush();
+	// Parse a small unsigned PID
+	uint32_t pid = 0;
+	for (const char* p = args; *p >= '0' && *p <= '9'; p++)
+		pid = pid * 10 + (uint32_t)(*p - '0');
 
-	// Runs the program in ring 3, returns when it exits
-	process_run(proc, entry, USER_STACK_TOP);
-	process_destroy(proc);
+	if (pid == 0)
+	{
+		terminal_writestring("kill: cannot kill the kernel\n");
+		return;
+	}
+
+	process_t* proc = scheduler_find(pid);
+	if (!proc)
+	{
+		terminal_writestring("kill: no such process\n");
+		return;
+	}
+
+	if (foreground_process == proc)
+		foreground_process = 0;
+
+	if (proc == current_process)
+	{
+		// We are running on this process's kernel stack (in the
+		// keyboard IRQ). Mark it dead; the next scheduler tick switches
+		// away and the reaper frees it.
+		proc->state = PROCESS_DEAD;
+	}
+	else
+	{
+		// Preempted elsewhere: unlink and hand straight to the reaper.
+		proc->state = PROCESS_DEAD;
+		scheduler_remove(proc);
+		process_zombie_add(proc);
+	}
+
+	terminal_writestring("killed [");
+	print_uint(pid);
+	terminal_writestring("]\n");
+}
+
+// Called by the reaper (kernel task) when a process has been freed.
+// Runs with interrupts briefly disabled so its terminal output can't
+// interleave with the keyboard IRQ's shell echo.
+void shell_on_process_exit(uint32_t pid, int foreground)
+{
+	asm volatile("cli");
+
+	if (foreground)
+	{
+		// The shell was waiting on this program — just bring the
+		// prompt back.
+		shell_prompt();
+	}
+	else
+	{
+		// Background process: announce it, then restore the prompt and
+		// whatever the user was in the middle of typing.
+		terminal_writestring("\n[");
+		print_uint(pid);
+		terminal_writestring("] done\n");
+		shell_prompt();
+		for (int i = 0; i < input_index; i++)
+			terminal_putchar(input_buffer[i]);
+		for (int i = cursor_pos; i < input_index; i++)
+			terminal_cursor_left();
+	}
+
+	asm volatile("sti");
 }
 
 // uptime
@@ -704,6 +856,15 @@ static void shell_execute(const char* input)
 	else if (is_command(input, "exec"))
 		cmd_exec(get_args(input, 4));
 
+	else if (is_command(input, "bg"))
+		cmd_bg(get_args(input, 2));
+
+	else if (is_command(input, "ps"))
+		cmd_ps();
+
+	else if (is_command(input, "kill"))
+		cmd_kill(get_args(input, 4));
+
 	else if (is_command(input, "uptime"))
 		cmd_uptime();
 
@@ -752,10 +913,9 @@ static void clear_input_line(void)
 
 void shell_handle_char(char c)
 {
-	// While a user process is running, the shell is suspended inside
-	// cmd_exec — running another command from this IRQ context would
-	// clobber the exec state, so drop the input
-	if (current_process)
+	// A foreground process owns the keyboard; the keyboard driver
+	// routes input to it, not here. This guard is belt-and-suspenders.
+	if (foreground_process)
 		return;
 
 	if (c == '\n')
@@ -782,7 +942,12 @@ void shell_handle_char(char c)
 		input_index = 0;
 		cursor_pos = 0;
 		history_index = -1;
-		shell_prompt();
+
+		// If that command launched a foreground process, the shell is
+		// now waiting on it — the prompt comes back when it exits
+		// (shell_on_process_exit), so don't print one here.
+		if (!foreground_process)
+			shell_prompt();
 	}
 	else if ((unsigned char)c == KEY_CLEAR)
 	{
@@ -875,7 +1040,7 @@ void shell_handle_char(char c)
 				"help", "clear", "echo", "about", "ls", "pwd",
 				"cat", "touch", "mkdir", "cd", "rm", "write",
 				"rename", "time", "uptime", "free", "exec",
-				"fasterfetch", "reboot", 0
+				"bg", "ps", "kill", "fasterfetch", "reboot", 0
 			};
 			for (int ci = 0; commands[ci] != 0 && count < 16; ci++)
 			{

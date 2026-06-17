@@ -41,6 +41,24 @@ static void free_page_table(uint32_t* table)
 		table_free_list[free_table_count++] = table;
 }
 
+// Make sure the boot directory has a page table covering virt.
+// Used to pre-create kernel-half tables before any process address
+// space is made, so the (shared) table is copied into all of them.
+static void ensure_kernel_table(uint32_t virt)
+{
+	uint32_t dir_index = virt >> 22;
+
+	if (boot_page_directory[dir_index] & PAGE_PRESENT)
+		return;
+
+	uint32_t* table = alloc_page_table();
+	if (!table)
+		return;
+
+	uint32_t table_phys = (uint32_t)table - KERNEL_VIRTUAL_BASE;
+	boot_page_directory[dir_index] = table_phys | PAGE_PRESENT | PAGE_WRITEABLE;
+}
+
 void paging_init(void)
 {
 	// Paging itself is already set up in boot.s before kernel_main
@@ -48,6 +66,11 @@ void paging_init(void)
 	free_table_count = 0;
 	for (int i = 0; i < USER_TABLE_POOL; i++)
 		table_free_list[free_table_count++] = user_page_tables[i];
+
+	// Pre-create the ELF scratch window's table so every process
+	// address space (which copies kernel directory entries at creation)
+	// shares it — the loader must work no matter which CR3 is active
+	ensure_kernel_table(ELF_SCRATCH_VIRT);
 }
 
 // Map a physical page to a virtual address with given flags.

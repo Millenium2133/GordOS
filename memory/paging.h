@@ -12,6 +12,12 @@
 // copied into each process directory).
 #define KERNEL_VIRTUAL_BASE 0xC0000000
 
+// Kernel-side scratch window used by the ELF loader to copy segment
+// data into freshly allocated physical pages. Its page table is
+// pre-created in paging_init so the mapping is shared by (and visible
+// in) every address space created afterwards.
+#define ELF_SCRATCH_VIRT 0xC0400000
+
 
 uint32_t* paging_create_address_space(void);
 void paging_destroy_address_space(uint32_t* page_directory);
