@@ -6,6 +6,8 @@
 #define KEY_LEFT	0x82
 #define KEY_RIGHT	0x83
 #define KEY_TAB		0x09
+#define KEY_CANCEL	0x03	// Ctrl+C: cancel current line
+#define KEY_CLEAR	0x0C	// Ctrl+L: clear screen, keep input
 
 void shell_init(void);
 void shell_handle_char(char c);

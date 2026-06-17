@@ -20,6 +20,7 @@ GordOS can now load an ELF executable from the FAT32 disk and run it as a real u
 - PS/2 keyboard driver with full scancode translation, shift, and arrow keys
 - Interactive shell with command history, mid-line cursor movement, and tab autocomplete
 - Tab autocomplete for both commands and filenames/directories (including subdirectories)
+- Shell keyboard shortcuts: Ctrl+L clears the screen (keeping the typed line), Ctrl+C cancels the current line
 - Physical memory manager with bitmap allocator
 - Kernel heap allocator (kmalloc/kfree) with splitting and coalescing
 - ATA PIO disk driver
@@ -39,7 +40,8 @@ GordOS can now load an ELF executable from the FAT32 disk and run it as a real u
 - `exec` runs ELF binaries from disk in ring 3 and returns to the shell when they exit
 - Kernel heap and VGA mappings live in the higher half, valid in every address space
 - Sample user programs (`user/hello.c`, interactive `user/echo.c`, file I/O `user/files.c`) built by `make user`, installed by `make disk`
-- Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `exec`, `time`, `uptime`, `free`
+- `fasterfetch` — a neofetch-style system info screen (CPU brand via CPUID, live memory and uptime, colour palette)
+- Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `exec`, `time`, `uptime`, `free`, `fasterfetch`, `reboot`
 
 ---
 

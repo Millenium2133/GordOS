@@ -69,6 +69,7 @@ static const char scancode_table_shift[128] =
 };
 
 static int shift_pressed = 0;
+static int ctrl_pressed = 0;
 static int extended = 0;
 
 static void keyboard_handler(struct registers* regs)
@@ -88,6 +89,8 @@ static void keyboard_handler(struct registers* regs)
         uint8_t released = scancode & 0x7F;
         if (!extended && (released == 0x2A || released == 0x36))
             shift_pressed = 0;
+        if (released == 0x1D)  // left or (extended) right control
+            ctrl_pressed = 0;
         extended = 0;
         return;
     }
@@ -97,6 +100,7 @@ static void keyboard_handler(struct registers* regs)
         extended = 0;
         switch (scancode)
         {
+            case 0x1D: ctrl_pressed = 1;        return;  // right control
             case 0x48: deliver_char(KEY_UP);    return;
             case 0x50: deliver_char(KEY_DOWN);  return;
             case 0x4B: deliver_char(KEY_LEFT);  return;
@@ -105,10 +109,21 @@ static void keyboard_handler(struct registers* regs)
         return;
     }
 
+    if (scancode == 0x1D) { ctrl_pressed = 1; return; }  // left control
     if (scancode == 0x2A || scancode == 0x36) { shift_pressed = 1; return; }
     if (scancode == 0x0F) { deliver_char(KEY_TAB); return; }
     if (scancode == 0x1C) { deliver_char('\n'); return; }
     if (scancode == 0x0E) { deliver_char('\b'); return; }
+
+    // Ctrl held: turn a letter into its control code (Ctrl+L -> 0x0C,
+    // Ctrl+C -> 0x03, etc.) and skip the normal character path
+    if (ctrl_pressed)
+    {
+        char base = scancode_table[scancode];
+        if (base >= 'a' && base <= 'z')
+            deliver_char(base & 0x1F);
+        return;
+    }
 
     char c = shift_pressed ? scancode_table_shift[scancode] : scancode_table[scancode];
     if (c != 0)

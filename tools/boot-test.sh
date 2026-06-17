@@ -41,7 +41,7 @@ while ! grep -q 'GordOS/>' "$SERIAL_LOG" 2>/dev/null; do
 done
 
 # Type commands into the guest via QEMU monitor sendkey
-python3 - "$MON_SOCK" "exec HELLO.ELF" "exec CRASH.ELF" << 'EOF'
+python3 - "$MON_SOCK" "fasterfetch" "exec HELLO.ELF" "exec CRASH.ELF" << 'EOF'
 import socket, sys, time
 
 KEYMAP = {' ': 'spc', '.': 'dot', '/': 'slash', '-': 'minus'}
@@ -73,7 +73,7 @@ EOF
 sleep 2
 
 status=0
-for expect in 'FAT32 MOUNTED' 'Hello from ring 3!' 'User process killed'; do
+for expect in 'FAT32 MOUNTED' 'GordOS (i686)' 'Hello from ring 3!' 'User process killed'; do
     if grep -q "$expect" "$SERIAL_LOG"; then
         echo "PASS: $expect"
     else

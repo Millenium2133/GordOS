@@ -146,6 +146,11 @@ uint32_t pmm_free_pages (void)
 	return free_pages;
 }
 
+uint32_t pmm_total_pages (void)
+{
+	return total_pages;
+}
+
 
 
 

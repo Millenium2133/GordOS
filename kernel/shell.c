@@ -10,6 +10,7 @@
 #include "elf.h"
 #include "paging.h"
 #include "keyboard.h"
+#include "pic.h"
 
 #define INPUT_BUFFER_SIZE 256
 
@@ -71,10 +72,15 @@ static void cmd_help(void)
 	terminal_writestring("	write	- Write text to file\n");
 	terminal_writestring("	rename	- Rename a file\n");
 	terminal_writestring("	exec	- Run an ELF program in user mode\n");
+	terminal_writestring("	exec	- Run an ELF program in user mode\n");
 	terminal_writestring("	time	- Show current date and time\n");
 	terminal_writestring("	uptime	- Show time since boot\n");
 	terminal_writestring("	free	- Show free memory\n");
+	terminal_writestring("	fasterfetch - Show system info\n");
+	terminal_writestring("	reboot	- Restart the machine\n");
 	terminal_writestring("	about	- About GordOS\n");
+	terminal_writestring("\n");
+	terminal_writestring("	Ctrl+L clears the screen, Ctrl+C cancels a line\n");
 }
 
 // clear
@@ -435,6 +441,197 @@ static void cmd_free(void)
 	terminal_writestring(" KB)\n");
 }
 
+// reboot — ask the 8042 keyboard controller to pulse the CPU reset line
+static void cmd_reboot(void)
+{
+	terminal_writestring("Rebooting...\n");
+
+	// Drain the 8042 input buffer, then issue the reset command
+	uint8_t status;
+	do { status = inb(0x64); } while (status & 0x02);
+	outb(0x64, 0xFE);
+
+	// If that didn't take, fall back to a triple fault by halting
+	asm volatile("cli");
+	for (;;) asm volatile("hlt");
+}
+
+// ++++++++++++++++++++
+// + fasterfetch       +
+// ++++++++++++++++++++
+
+static void cpuid(uint32_t leaf, uint32_t* a, uint32_t* b, uint32_t* c, uint32_t* d)
+{
+	asm volatile("cpuid"
+	             : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d)
+	             : "a"(leaf), "c"(0));
+}
+
+// Fill name (must hold >= 49 bytes) with the CPU brand string if the
+// processor supports it, otherwise the 12-char vendor id.
+static void cpu_get_name(char* name)
+{
+	uint32_t a, b, c, d;
+
+	// Highest supported extended leaf
+	cpuid(0x80000000, &a, &b, &c, &d);
+	uint32_t max_ext = a;
+
+	if (max_ext >= 0x80000004)
+	{
+		uint32_t* words = (uint32_t*)name;
+		int wi = 0;
+		for (uint32_t leaf = 0x80000002; leaf <= 0x80000004; leaf++)
+		{
+			cpuid(leaf, &a, &b, &c, &d);
+			words[wi++] = a;
+			words[wi++] = b;
+			words[wi++] = c;
+			words[wi++] = d;
+		}
+		name[48] = '\0';
+
+		// Brand strings are often left-padded with spaces; skip them
+		// by shifting the string down to the first non-space
+		int start = 0;
+		while (name[start] == ' ') start++;
+		if (start > 0)
+		{
+			int k = 0;
+			while (name[start + k]) { name[k] = name[start + k]; k++; }
+			name[k] = '\0';
+		}
+		return;
+	}
+
+	// No brand string: use the 12-character vendor id (EBX, EDX, ECX)
+	cpuid(0, &a, &b, &c, &d);
+	uint32_t* words = (uint32_t*)name;
+	words[0] = b;
+	words[1] = d;
+	words[2] = c;
+	name[12] = '\0';
+}
+
+// Left column logo, printed in cyan beside the info lines
+static const char* ff_logo[] = {
+	"   ________   ",
+	"  / GordOS \\  ",
+	" |  .----.  | ",
+	" |  | >_ |  | ",
+	" |  '----'  | ",
+	"  \\________/  ",
+	"    |    |    ",
+	"   /______\\   ",
+};
+#define FF_LOGO_LINES (int)(sizeof(ff_logo) / sizeof(ff_logo[0]))
+#define FF_LOGO_WIDTH 14
+
+static void ff_logo_line(int row)
+{
+	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
+	if (row < FF_LOGO_LINES)
+		terminal_writestring(ff_logo[row]);
+	else
+		for (int i = 0; i < FF_LOGO_WIDTH; i++)
+			terminal_putchar(' ');
+	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
+}
+
+static void ff_label(const char* label)
+{
+	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
+	terminal_writestring(label);
+	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
+}
+
+static void cmd_fasterfetch(void)
+{
+	char cpu_name[49];
+	cpu_get_name(cpu_name);
+
+	uint32_t free_pg  = pmm_free_pages();
+	uint32_t total_pg = pmm_total_pages();
+	uint32_t used_mb  = ((total_pg - free_pg) * 4) / 1024;
+	uint32_t total_mb = (total_pg * 4) / 1024;
+	uint32_t seconds  = timer_ticks() / 1000;
+
+	int row = 0;
+
+	// Row 0: user@host
+	ff_logo_line(row++);
+	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+	terminal_writestring("gordon");
+	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
+	terminal_writestring("@");
+	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
+	terminal_writestring("gordos");
+	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
+	terminal_putchar('\n');
+
+	// Row 1: separator
+	ff_logo_line(row++);
+	terminal_writestring("-------------\n");
+
+	// Row 2: OS
+	ff_logo_line(row++);
+	ff_label("OS:      ");
+	terminal_writestring("GordOS (i686)\n");
+
+	// Row 3: Kernel
+	ff_logo_line(row++);
+	ff_label("Kernel:  ");
+	terminal_writestring("monolithic, higher-half\n");
+
+	// Row 4: Uptime
+	ff_logo_line(row++);
+	ff_label("Uptime:  ");
+	print_uint(seconds / 60);
+	terminal_writestring("m ");
+	print_uint(seconds % 60);
+	terminal_writestring("s\n");
+
+	// Row 5: Shell + Display
+	ff_logo_line(row++);
+	ff_label("Shell:   ");
+	terminal_writestring("gsh\n");
+
+	// Row 6: CPU
+	ff_logo_line(row++);
+	ff_label("CPU:     ");
+	terminal_writestring(cpu_name);
+	terminal_putchar('\n');
+
+	// Row 7: Memory
+	ff_logo_line(row++);
+	ff_label("Memory:  ");
+	print_uint(used_mb);
+	terminal_writestring(" / ");
+	print_uint(total_mb);
+	terminal_writestring(" MB\n");
+
+	// Trailing rows: colour palette blocks
+	for (int i = 0; i < FF_LOGO_WIDTH; i++)
+		terminal_putchar(' ');
+	for (int bg = 0; bg < 8; bg++)
+	{
+		terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, (enum vga_color)bg));
+		terminal_writestring("  ");
+	}
+	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
+	terminal_putchar('\n');
+
+	for (int i = 0; i < FF_LOGO_WIDTH; i++)
+		terminal_putchar(' ');
+	for (int bg = 8; bg < 16; bg++)
+	{
+		terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, (enum vga_color)bg));
+		terminal_writestring("  ");
+	}
+	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
+	terminal_putchar('\n');
+}
+
 
 // ++++++++++++++++++++
 // + Command Dispatch +
@@ -513,6 +710,12 @@ static void shell_execute(const char* input)
 	else if (is_command(input, "free"))
 		cmd_free();
 
+	else if (is_command(input, "fasterfetch"))
+		cmd_fasterfetch();
+
+	else if (is_command(input, "reboot"))
+		cmd_reboot();
+
 	else
 	{
 		terminal_writestring("Unknown Command: ");
@@ -576,6 +779,26 @@ void shell_handle_char(char c)
 		}
 
 		shell_execute(input_buffer);
+		input_index = 0;
+		cursor_pos = 0;
+		history_index = -1;
+		shell_prompt();
+	}
+	else if ((unsigned char)c == KEY_CLEAR)
+	{
+		// Ctrl+L: wipe the screen but keep whatever is being typed
+		extern void terminal_initialize(void);
+		terminal_initialize();
+		shell_prompt();
+		for (int i = 0; i < input_index; i++)
+			terminal_putchar(input_buffer[i]);
+		for (int i = cursor_pos; i < input_index; i++)
+			terminal_cursor_left();
+	}
+	else if ((unsigned char)c == KEY_CANCEL)
+	{
+		// Ctrl+C: abandon the current line and start fresh
+		terminal_writestring("^C\n");
 		input_index = 0;
 		cursor_pos = 0;
 		history_index = -1;
@@ -651,7 +874,8 @@ void shell_handle_char(char c)
 			static const char* commands[] = {
 				"help", "clear", "echo", "about", "ls", "pwd",
 				"cat", "touch", "mkdir", "cd", "rm", "write",
-				"rename", "time", "uptime", "free", "exec", 0
+				"rename", "time", "uptime", "free", "exec",
+				"fasterfetch", "reboot", 0
 			};
 			for (int ci = 0; commands[ci] != 0 && count < 16; ci++)
 			{

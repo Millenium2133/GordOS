@@ -12,5 +12,6 @@ void* pmm_alloc_page(void);
 void* pmm_alloc_contiguous(size_t n);
 void pmm_free_page(void* addr);
 uint32_t pmm_free_pages(void);
+uint32_t pmm_total_pages(void);
 
 #endif
