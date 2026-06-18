@@ -70,6 +70,8 @@ disk: user
 	mcopy -i disk.img user/counter.elf ::COUNTER.ELF
 	mcopy -i disk.img user/forktest.elf ::FORKTEST.ELF
 	mcopy -i disk.img user/fdcat.elf ::FDCAT.ELF
+	mcopy -i disk.img user/redir.elf ::REDIR.ELF
+	mcopy -i disk.img user/ush.elf ::USH.ELF
 
 run: GordOS.iso
 	@test -f disk.img || (echo "ERROR: disk.img not found, run 'make disk' first" && exit 1)
@@ -215,7 +217,8 @@ kernel/wbuf.o: kernel/wbuf.c kernel/wbuf.h fs/fat32.h memory/kmalloc.h lib/strin
 # + User Programs    +
 # +------------------+
 
-user: user/hello.elf user/echo.elf user/files.elf user/crash.elf user/counter.elf user/forktest.elf user/fdcat.elf
+user: user/hello.elf user/echo.elf user/files.elf user/crash.elf user/counter.elf \
+      user/forktest.elf user/fdcat.elf user/redir.elf user/ush.elf
 
 user/hello.elf: user/hello.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
@@ -244,3 +247,11 @@ user/forktest.elf: user/forktest.c user/linker.ld
 user/fdcat.elf: user/fdcat.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
 	      -T user/linker.ld user/fdcat.c -o user/fdcat.elf
+
+user/redir.elf: user/redir.c user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
+	      -T user/linker.ld user/redir.c -o user/redir.elf
+
+user/ush.elf: user/ush.c user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
+	      -T user/linker.ld user/ush.c -o user/ush.elf

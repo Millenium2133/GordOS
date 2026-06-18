@@ -381,14 +381,20 @@ void process_reap(void)
         process_t* proc = list;
         list = list->next;
 
-        uint32_t pid = proc->pid;
-        int fg       = proc->foreground;
+        uint32_t pid    = proc->pid;
+        int fg          = proc->foreground;
+        uint32_t parent = proc->parent_pid;
 
         asm volatile("cli");
         process_destroy(proc);
         asm volatile("sti");
 
-        shell_on_process_exit(pid, fg);
+        // Only the kernel shell's own children (parented to the kernel
+        // task, pid 0) get the "[n] done" notice + prompt redraw. A
+        // child of a user process — e.g. one a user-space shell forked —
+        // is reaped silently; that shell collects it with wait().
+        if (parent == 0)
+            shell_on_process_exit(pid, fg);
     }
 }
 

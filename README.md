@@ -6,6 +6,19 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 
 ---
 
+## Milestone Reached: A User-Space Shell with I/O Redirection
+
+GordOS now has standard streams and a shell that runs entirely in ring 3.
+
+- Every process has the usual **standard streams**: fd 0 = stdin (keyboard), fd 1 = stdout, fd 2 = stderr (terminal). `write()`/`read()` go through them, so a redirected stdout transparently captures any program's output without the program knowing.
+- **Writable files**: `open()` with the write flag returns a write fd; bytes written to it are committed to disk when the fd is closed.
+- **`dup2()`** rewires a process's fds â€” the basis for redirection.
+- **`user/ush.c`** is a small shell *running in user mode*: it reads a command, forks a child that execs the named program, and waits for it. Output can be redirected to a file: from inside it, `HELLO.ELF > OUT.TXT` writes HELLO's output to `OUT.TXT` instead of the screen. Launch it with `exec USH.ELF` and type `exit` to return. (`user/redir.c` is a self-contained redirection test.)
+
+The existing kernel shell remains the default interactive shell; `ush` demonstrates that a real shell can now live in user space on top of fork/exec/wait and the fd syscalls. Running programs that read keyboard input from inside `ush`, and passing arguments to programs, are the next steps.
+
+---
+
 ## Milestone Reached: fork / exec / wait and File Descriptors
 
 GordOS now has the core Unix process and file primitives, so user programs can manage children and read files incrementally instead of only whole-file.
@@ -50,7 +63,7 @@ Earlier milestone (still true): ELF executables are loaded from the FAT32 disk â
 - Page fault handler that prints the faulting address and error code
 - PIT driver at 1000Hz (timer_ticks, timer_sleep)
 - RTC driver reading real wall-clock time from CMOS
-- Syscall interface via `int 0x80` (write, exit, getpid, read, sleep, readfile, writefile, fork, exec, wait, waitpid, open, close, read_fd) with return values in `eax`
+- Syscall interface via `int 0x80` (write, exit, getpid, read, sleep, readfile, writefile, fork, exec, wait, waitpid, open, close, read_fd, write_fd, dup2) with return values in `eax`
 - Faulting user processes are killed and control returns to the shell
 - COM1 serial debug console â€” all terminal output is mirrored (`qemu -serial stdio` or a serial cable on real hardware)
 - Ring 3 GDT segments, TSS, and `jump_to_usermode`
@@ -63,9 +76,12 @@ Earlier milestone (still true): ELF executables are loaded from the FAT32 disk â
 - `wait()` / `waitpid()`: a process can spawn children and block until they exit, collecting the exit code
 - File-descriptor file I/O: `open`/`read`/`close` read a file incrementally, resuming from a cached cluster position (whole-file syscalls still available)
 - Blocking `read()`: a process waiting on the keyboard sleeps off the run queue and is woken on input, instead of busy-spinning
+- Standard streams (stdin/stdout/stderr as fds 0/1/2) with `write`/`read` routed through them
+- Writable file descriptors and `dup2`, enabling `cmd > file` style output redirection
+- A user-space shell (`user/ush.c`) that forks/execs programs and redirects their output, run with `exec USH.ELF`
 - ELF executable loader (PT_LOAD segments into a process address space)
 - Kernel heap and VGA mappings live in the higher half, valid in every address space
-- Sample user programs (`user/hello.c`, interactive `user/echo.c`, file I/O `user/files.c`, background `user/counter.c`, `user/forktest.c`, `user/fdcat.c`) built by `make user`, installed by `make disk`
+- Sample user programs (`user/hello.c`, interactive `user/echo.c`, file I/O `user/files.c`, background `user/counter.c`, `user/forktest.c`, `user/fdcat.c`, `user/redir.c`, user-space shell `user/ush.c`) built by `make user`, installed by `make disk`
 - `fasterfetch` â€” a neofetch-style system info screen (CPU brand via CPUID, live memory and uptime, colour palette)
 - Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `exec`, `bg`, `ps`, `kill`, `time`, `uptime`, `free`, `fasterfetch`, `reboot`
 
@@ -78,9 +94,9 @@ Active development.
 **Upcoming work (roughly in order):**
 
 **Near term**
-- A user-space shell, now that `fork`/`exec`/`wait` exist to launch and reap programs
-- Writable file descriptors (incremental `write` to an fd, growing files cluster-by-cluster)
-- `dup`/redirection so programs can be wired together
+- Argument passing to programs (argc/argv across `exec`)
+- Letting a user-space shell hand keyboard focus to an interactive child, then reclaim it
+- Pipes (`cmd1 | cmd2`) building on the fd and redirection plumbing
 
 **Medium term**
 - VFS layer abstracting FAT32 behind a unified file interface
@@ -140,10 +156,10 @@ Active development.
 
 | Number | Name | Description |
 | :--- | :--- | :--- |
-| 0 | `sys_write` | Write buffer to terminal |
+| 0 | `sys_write` | Write a buffer to stdout (fd 1) |
 | 1 | `sys_exit` | Terminate process (exit code in `ebx`) |
 | 2 | `sys_getpid` | Get current process ID |
-| 3 | `sys_read` | Read keyboard input (blocks, sleeping, until at least 1 byte) |
+| 3 | `sys_read` | Read from stdin (fd 0); blocks, sleeping, until at least 1 byte |
 | 4 | `sys_sleep` | Sleep for N milliseconds |
 | 5 | `sys_readfile` | Read a whole file from disk into a buffer |
 | 6 | `sys_writefile` | Write a buffer to a file, replacing its contents |
@@ -151,10 +167,11 @@ Active development.
 | 8 | `sys_exec` | Replace the current program with the named ELF (keeps pid) |
 | 9 | `sys_wait` | Block until any child exits; returns its pid, code via `ebx` |
 | 10 | `sys_waitpid` | Block until the child in `ebx` exits; code via `ecx` |
-| 11 | `sys_open` | Open a file, returns a small fd (or -1) |
-| 12 | `sys_close` | Close an fd |
+| 11 | `sys_open` | Open a file (`ecx` flags: 0 = read, 1 = write); returns an fd |
+| 12 | `sys_close` | Close an fd (flushing a write fd to disk) |
 | 13 | `sys_read_fd` | Read up to N bytes from an fd, resuming from its position |
-| 14 | `sys_write_fd` | Reserved; incremental fd writes not yet supported (returns -1) |
+| 14 | `sys_write_fd` | Write N bytes to an fd (terminal, or a file's write buffer) |
+| 15 | `sys_dup2` | Make `ecx` refer to the same open file as `ebx` (redirection) |
 
 ### Compilation Flags
 
@@ -214,8 +231,9 @@ make clean  # Remove all build artifacts
 through the QEMU monitor, and checks the serial log for expected output:
 a user program running in ring 3, a crashing program being killed
 cleanly, a background program running concurrently, `fork`/`exec`/`wait`
-(via `FORKTEST.ELF`), and incremental fd reads (via `FDCAT.ELF`). CI
-runs it on every push.
+(via `FORKTEST.ELF`), incremental fd reads (via `FDCAT.ELF`), output
+redirection (via `REDIR.ELF`), and a user-space shell session (via
+`USH.ELF`). CI runs it on every push.
 
 ---
 
