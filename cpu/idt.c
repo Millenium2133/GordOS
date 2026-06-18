@@ -199,6 +199,7 @@ void isr_handler(struct registers* regs)
 	if ((regs->cs & 3) == 3 && current_process)
 	{
 		terminal_writestring("User process killed\n");
+		current_process->exit_code = -1; // distinguish a fault from a clean exit
 		process_exit(); // never returns
 	}
 

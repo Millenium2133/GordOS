@@ -67,6 +67,7 @@ disk: user
 	mcopy -i disk.img user/files.elf ::FILES.ELF
 	mcopy -i disk.img user/crash.elf ::CRASH.ELF
 	mcopy -i disk.img user/counter.elf ::COUNTER.ELF
+	mcopy -i disk.img user/forktest.elf ::FORKTEST.ELF
 
 run: GordOS.iso
 	@test -f disk.img || (echo "ERROR: disk.img not found, run 'make disk' first" && exit 1)
@@ -209,7 +210,7 @@ kernel/elf.o: kernel/elf.c kernel/elf.h kernel/process.h memory/paging.h memory/
 # + User Programs    +
 # +------------------+
 
-user: user/hello.elf user/echo.elf user/files.elf user/crash.elf user/counter.elf
+user: user/hello.elf user/echo.elf user/files.elf user/crash.elf user/counter.elf user/forktest.elf
 
 user/hello.elf: user/hello.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
@@ -230,3 +231,7 @@ user/crash.elf: user/crash.c user/linker.ld
 user/counter.elf: user/counter.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
 	      -T user/linker.ld user/counter.c -o user/counter.elf
+
+user/forktest.elf: user/forktest.c user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
+	      -T user/linker.ld user/forktest.c -o user/forktest.elf

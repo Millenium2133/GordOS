@@ -1,9 +1,11 @@
 #include "syscall.h"
 #include "vga.h"
 #include "process.h"
+#include "scheduler.h"
 #include "keyboard.h"
 #include "pit.h"
 #include "fat32.h"
+#include "kmalloc.h"
 
 void terminal_writestring(const char* data);
 void terminal_putchar(char c);
@@ -127,11 +129,39 @@ static int sys_writefile(const char* upath, const char* buf, uint32_t len)
     return fat32_write_file(path, buf, len);
 }
 
+// sys_exec: replace the calling program with the one named by ebx.
+// Reads the file into a kernel buffer, then hands it (and ownership)
+// to process_exec, which enters the new program and never returns on
+// success. Returns -1 only if the file is missing or not a valid ELF.
+static int sys_exec(const char* upath)
+{
+    char path[256];
+    if (copy_user_path(upath, path, sizeof(path)) != 0)
+        return -1;
+
+    void* buf = kmalloc(65536);
+    if (!buf)
+        return -1;
+
+    uint32_t size = 0;
+    if (fat32_read_file(path, buf, 65536, &size) != 0)
+    {
+        kfree(buf);
+        return -1;
+    }
+
+    // process_exec takes ownership of buf (frees it). Only returns on
+    // failure, with the caller's program still intact.
+    return process_exec(current_process, buf, size);
+}
+
 // sys_exit: tear down the calling process. The scheduler switches to
 // another task and the kernel task's reaper frees this one's memory.
 static void sys_exit(int code)
 {
-    (void)code;
+    // Stash the exit code so a waiting parent can read it
+    if (current_process)
+        current_process->exit_code = code;
 
     process_exit(); // never returns for a real process
 
@@ -139,6 +169,51 @@ static void sys_exit(int code)
     asm volatile("sti");
     for (;;)
         asm volatile("hlt");
+}
+
+// sys_wait / sys_waitpid: block until a child exits, then return its pid
+// and write its exit code through the user int pointer (may be 0/NULL).
+// target = 0 waits for any child; otherwise a specific child pid.
+// Returns the child's pid, or -1 if there is no such child to wait for.
+static int sys_wait(uint32_t target, int* status)
+{
+    if (status && !user_range_ok(status, sizeof(int)))
+        return -1;
+
+    process_t* me = current_process;
+    if (!me)
+        return -1;
+
+    // We are in syscall context, so interrupts are already disabled —
+    // the exit-record and scheduler state we touch stays consistent.
+    for (;;)
+    {
+        uint32_t cpid;
+        int code;
+        if (process_reap_child(me->pid, target, &cpid, &code) == 0)
+        {
+            if (status)
+                *status = code;
+            return (int)cpid;
+        }
+
+        // Nothing exited yet — is there a live child to wait on?
+        if (target == 0)
+        {
+            if (!scheduler_has_child(me->pid))
+                return -1; // no children at all
+        }
+        else
+        {
+            process_t* child = scheduler_find_any(target);
+            if (!child || child->parent_pid != me->pid)
+                return -1; // not our child (or already reaped)
+        }
+
+        // Sleep until a matching child exits and wakes us, then retry.
+        scheduler_block(BLOCK_WAIT, target);
+        scheduler_switch();
+    }
 }
 
 // sys_getpid: return the current process's PID (0 if none)
@@ -173,6 +248,25 @@ void syscall_handler(struct registers* regs)
             break;
         case SYS_WRITEFILE:
             ret = sys_writefile((const char*)regs->ebx, (const char*)regs->ecx, regs->edx);
+            break;
+        case SYS_FORK:
+        {
+            // Parent gets the child's pid; the child is built to return
+            // 0 from its own copy of this frame.
+            process_t* child = process_fork(regs);
+            ret = child ? (int)child->pid : -1;
+            break;
+        }
+        case SYS_EXEC:
+            ret = sys_exec((const char*)regs->ebx);
+            break;
+        case SYS_WAIT:
+            // ebx = user int* for the exit code (or 0); waits for any child
+            ret = sys_wait(0, (int*)regs->ebx);
+            break;
+        case SYS_WAITPID:
+            // ebx = child pid, ecx = user int* for the exit code (or 0)
+            ret = sys_wait(regs->ebx, (int*)regs->ecx);
             break;
         default:
             // Unknown syscall

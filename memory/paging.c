@@ -1,8 +1,17 @@
 #include "paging.h"
 #include "pmm.h"
+#include "string.h"
 
 // The boot page directory is set up in boot.s
 extern uint32_t boot_page_directory[1024];
+
+// Second scratch window for fork's page copies. It lives in the same
+// 4MB region as ELF_SCRATCH_VIRT (0xC04xxxxx), so the page table that
+// ensure_kernel_table created for the ELF scratch already covers it —
+// no extra setup needed. fork and the ELF loader never run at the same
+// time (the kernel is single-threaded with interrupts off during a
+// syscall), so a separate address just keeps their uses from aliasing.
+#define FORK_SCRATCH_VIRT 0xC0401000
 
 // Pre-allocated page tables for user space mappings, managed as a
 // free list so tables return to the pool when an address space is
@@ -148,15 +157,15 @@ uint32_t* paging_create_address_space(void)
     return new_dir;
 }
 
-// Destroy an address space: free its physical pages and return its
-// page tables (and the directory itself) to the pool.
-// Does NOT free kernel mappings (entries 768+). those are shared.
-void paging_destroy_address_space(uint32_t* page_directory)
+// Free the user half of an address space (entries 0-767): release every
+// mapped physical page and return the page tables to the pool, leaving
+// the directory object itself intact (kernel mappings 768+ are shared
+// and untouched). Used by exec to reuse a directory in place.
+void paging_clear_user_space(uint32_t* page_directory)
 {
     if (!page_directory)
         return;
 
-    // Free user space page tables (entries 0-767)
     uint32_t i;
     for (i = 0; i < 768; i++)
     {
@@ -175,8 +184,69 @@ void paging_destroy_address_space(uint32_t* page_directory)
             page_directory[i] = 0;
         }
     }
+}
 
+// Destroy an address space: free its user pages/tables (above) and then
+// return the directory itself to the pool.
+void paging_destroy_address_space(uint32_t* page_directory)
+{
+    if (!page_directory)
+        return;
+
+    paging_clear_user_space(page_directory);
     free_page_table(page_directory);
+}
+
+// Eagerly copy the user half (entries 0-767) of src_dir into dst_dir:
+// for every present page, allocate a fresh physical page, copy the
+// contents, and map it into dst with the same flags. No copy-on-write.
+//
+// Assumes src_dir is the CURRENTLY ACTIVE address space, so source
+// pages can be read directly at their user virtual addresses. Returns
+// 0 on success, -1 on out-of-memory (caller destroys the half-built
+// child, which frees whatever was mapped so far).
+int paging_copy_address_space(uint32_t* src_dir, uint32_t* dst_dir)
+{
+    if (!src_dir || !dst_dir)
+        return -1;
+
+    uint32_t d;
+    for (d = 0; d < 768; d++)
+    {
+        if (!(src_dir[d] & PAGE_PRESENT))
+            continue;
+
+        uint32_t* src_table = (uint32_t*)((src_dir[d] & ~0xFFF) + KERNEL_VIRTUAL_BASE);
+
+        uint32_t t;
+        for (t = 0; t < 1024; t++)
+        {
+            if (!(src_table[t] & PAGE_PRESENT))
+                continue;
+
+            uint32_t flags = src_table[t] & 0xFFF;
+            uint32_t vaddr = (d << 22) | (t << 12);
+
+            void* dst_phys = pmm_alloc_page();
+            if (!dst_phys)
+                return -1;
+
+            // Map the new page at the scratch window, copy the source
+            // page (readable at its own vaddr under the active cr3),
+            // then drop the scratch mapping.
+            paging_map_page(FORK_SCRATCH_VIRT, (uint32_t)dst_phys, PAGE_PRESENT | PAGE_WRITEABLE);
+            memcpy((void*)FORK_SCRATCH_VIRT, (void*)vaddr, 0x1000);
+            paging_unmap_page(FORK_SCRATCH_VIRT);
+
+            if (paging_map_page_in(dst_dir, vaddr, (uint32_t)dst_phys, flags) != 0)
+            {
+                pmm_free_page(dst_phys);
+                return -1;
+            }
+        }
+    }
+
+    return 0;
 }
 
 // Map a page in a specific address space (not necessarily the current one).

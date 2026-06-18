@@ -6,6 +6,11 @@
 // Circular linked list of ready processes (always contains at least
 // the kernel task once process_init has run)
 static process_t* ready_queue = 0;
+
+// Singly-linked list of blocked processes (off the ready queue, but
+// still reachable so they can be woken). Linked via proc->next.
+static process_t* blocked_list = 0;
+
 static uint32_t tick_count = 0;
 
 #define TIMESLICE 10  // switch every 10 PIT ticks (~10ms at 1000Hz)
@@ -87,6 +92,97 @@ void scheduler_for_each(void (*fn)(process_t*))
     } while (p != ready_queue);
 }
 
+// Mark the current process blocked. The actual move off the ready
+// queue onto the blocked list happens in scheduler_switch (mirroring
+// dead-process handling), so the caller must follow this with
+// scheduler_switch(). Interrupts must already be disabled.
+void scheduler_block(int reason, uint32_t target)
+{
+    if (!current_process)
+        return;
+
+    current_process->state        = PROCESS_BLOCKED;
+    current_process->block_reason = reason;
+    current_process->wait_target  = target;
+}
+
+// Move a blocked process back onto the ready queue. Interrupts off.
+void scheduler_wake(process_t* proc)
+{
+    if (!proc || proc->state != PROCESS_BLOCKED)
+        return;
+
+    // Unlink from the blocked list
+    if (blocked_list == proc)
+    {
+        blocked_list = proc->next;
+    }
+    else
+    {
+        process_t* p = blocked_list;
+        while (p && p->next != proc)
+            p = p->next;
+        if (p)
+            p->next = proc->next;
+    }
+
+    proc->next         = 0;
+    proc->block_reason = BLOCK_NONE;
+    scheduler_add(proc);   // sets READY and links into the ready queue
+}
+
+// Wake a parent blocked in wait() for an exiting child, if there is
+// one. Returns the woken process or 0.
+process_t* scheduler_wake_waiter(uint32_t parent_pid, uint32_t child_pid)
+{
+    for (process_t* p = blocked_list; p; p = p->next)
+    {
+        if (p->block_reason == BLOCK_WAIT &&
+            p->pid == parent_pid &&
+            (p->wait_target == 0 || p->wait_target == child_pid))
+        {
+            scheduler_wake(p);
+            return p;
+        }
+    }
+    return 0;
+}
+
+// Look up a process by pid across both the ready and blocked lists.
+process_t* scheduler_find_any(uint32_t pid)
+{
+    process_t* p = scheduler_find(pid);
+    if (p)
+        return p;
+
+    for (p = blocked_list; p; p = p->next)
+        if (p->pid == pid)
+            return p;
+
+    return 0;
+}
+
+// Is there any live (ready or blocked) child of parent_pid?
+int scheduler_has_child(uint32_t parent_pid)
+{
+    if (ready_queue)
+    {
+        process_t* p = ready_queue;
+        do
+        {
+            if (p->parent_pid == parent_pid)
+                return 1;
+            p = p->next;
+        } while (p != ready_queue);
+    }
+
+    for (process_t* p = blocked_list; p; p = p->next)
+        if (p->parent_pid == parent_pid)
+            return 1;
+
+    return 0;
+}
+
 // Called from the PIT handler every tick
 void scheduler_tick(void)
 {
@@ -133,6 +229,16 @@ void scheduler_switch(void)
         // until after the switch below.
         scheduler_remove(prev);
         process_zombie_add(prev);
+    }
+    else if (prev->state == PROCESS_BLOCKED)
+    {
+        // Move off the ready queue onto the blocked list. It stays
+        // reachable there until scheduler_wake puts it back. Safe to do
+        // on prev's own kernel stack: it resumes (via this same saved
+        // esp) only once woken.
+        scheduler_remove(prev);
+        prev->next   = blocked_list;
+        blocked_list = prev;
     }
     else
     {

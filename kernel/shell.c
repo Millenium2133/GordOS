@@ -358,10 +358,7 @@ static void cmd_time(void)
 // waits for it to exit before showing the next prompt.
 // foreground=0 (bg): the process runs alongside the shell.
 // Returns the new process on success (still valid until this IRQ
-// returns), or 0 on failure.
-#define USER_STACK_PAGE 0xBFFFF000
-#define USER_STACK_TOP  0xBFFFFFF0
-
+// returns), or 0 on failure. (USER_STACK_* come from process.h.)
 static process_t* start_program(const char* args, int foreground, const char* who)
 {
 	if (!args || *args == '\0')

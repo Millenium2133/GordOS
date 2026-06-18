@@ -11,6 +11,14 @@
 #define SYS_SLEEP 4
 #define SYS_READFILE 5
 #define SYS_WRITEFILE 6
+#define SYS_FORK 7
+#define SYS_EXEC 8
+#define SYS_WAIT 9
+#define SYS_WAITPID 10
+#define SYS_OPEN 11
+#define SYS_CLOSE 12
+#define SYS_READ_FD 13
+#define SYS_WRITE_FD 14
 
 void syscall_init(void);
 void syscall_handler(struct registers* regs);
