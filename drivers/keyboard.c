@@ -3,6 +3,7 @@
 #include "pic.h"
 #include "shell.h"
 #include "process.h"
+#include "scheduler.h"
 
 // Ring buffer for input while a user process is running. The shell is
 // suspended inside exec then, so keystrokes are stored here for
@@ -44,6 +45,12 @@ static void deliver_char(char c)
             kbd_buffer[kbd_head] = c;
             kbd_head = next;
         }
+
+        // If that process is asleep in sys_read, wake it (we're in the
+        // IRQ with interrupts already disabled, as scheduler_wake wants)
+        if (foreground_process->state == PROCESS_BLOCKED &&
+            foreground_process->block_reason == BLOCK_READ)
+            scheduler_wake(foreground_process);
         return;
     }
 

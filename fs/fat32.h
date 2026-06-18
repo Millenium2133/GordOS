@@ -17,6 +17,15 @@ int fat32_init(void);
 // Read up to bufsize bytes of a file into buffer.
 // *size is set to the number of bytes actually read.
 int fat32_read_file(const char* path, void* buffer, uint32_t bufsize, uint32_t* size);
+
+// Look up a file's first cluster and size without reading it.
+// Returns 0 on success, -1 if not found.
+int fat32_lookup_file(const char* path, uint32_t* first_cluster, uint32_t* size);
+
+// Cluster-walk primitives for incremental (fd-based) reads
+uint32_t fat32_cluster_size(void);
+uint32_t fat32_next_cluster(uint32_t cluster);
+int fat32_read_cluster(uint32_t cluster, void* buffer);
 int fat32_list_dir(const char* path);
 int fat32_write_file(const char* path, const void* buffer, uint32_t size);
 int fat32_delete_file(const char* path);

@@ -105,6 +105,9 @@ void process_init(void)
     kernel_task.wait_target      = 0;
     kernel_task.next             = 0;
 
+    for (int i = 0; i < MAX_FDS; i++)
+        kernel_task.fds[i].in_use = 0;
+
     current_process    = &kernel_task;
     foreground_process = 0;
     zombie_list        = 0;
@@ -147,6 +150,9 @@ process_t* process_create(void)
     proc->block_reason = BLOCK_NONE;
     proc->wait_target  = 0;
     proc->next         = 0;
+
+    for (int i = 0; i < MAX_FDS; i++)
+        proc->fds[i].in_use = 0;
 
     return proc;
 }
@@ -199,6 +205,10 @@ process_t* process_fork(struct registers* regs)
         return 0;
 
     child->parent_pid = parent->pid;
+
+    // Child inherits the parent's open files (positions and all)
+    for (int i = 0; i < MAX_FDS; i++)
+        child->fds[i] = parent->fds[i];
 
     // Eager full copy of the parent's user address space
     if (paging_copy_address_space(parent->page_directory, child->page_directory) != 0)

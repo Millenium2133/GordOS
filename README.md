@@ -6,6 +6,20 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 
 ---
 
+## Milestone Reached: fork / exec / wait and File Descriptors
+
+GordOS now has the core Unix process and file primitives, so user programs can manage children and read files incrementally instead of only whole-file.
+
+- **`fork()`** duplicates the calling process — a full eager copy of its address space — returning the child's pid to the parent and `0` to the child, which then run concurrently under the scheduler.
+- **`exec()`** replaces a process's program in place, keeping the same pid: the classic fork-then-exec pattern works (the child execs a new program while the parent keeps running).
+- **`wait()` / `waitpid()`** block the parent until a child exits and hand back the child's pid and exit code — and the parent genuinely sleeps (off the run queue) rather than spinning.
+- **File descriptors**: `open()` / `read()` / `close()` let a program open a file and read it incrementally in chunks, resuming from a cached position in the FAT cluster chain instead of slurping the whole file each time. The whole-file convenience syscalls still work.
+- **Blocking `read()`**: waiting for keyboard input now sleeps the process and wakes it when a key arrives, so other processes get the CPU in the meantime.
+
+The sample `user/forktest.c` ties it together: it forks, the child execs `HELLO.ELF`, and the parent waits for it and prints its exit code. `user/fdcat.c` writes a multi-cluster file and reads it back 16 bytes at a time through an fd. Try `exec FORKTEST.ELF` and `exec FDCAT.ELF`.
+
+---
+
 ## Milestone Reached: Preemptive Multitasking
 
 GordOS now runs multiple processes concurrently. A PIT-driven round-robin scheduler time-slices between a kernel task (pid 0, which also hosts the shell and reaps exited processes), foreground programs, and background programs — each in its own address space, switched via a saved kernel context per process.
@@ -36,7 +50,7 @@ Earlier milestone (still true): ELF executables are loaded from the FAT32 disk �
 - Page fault handler that prints the faulting address and error code
 - PIT driver at 1000Hz (timer_ticks, timer_sleep)
 - RTC driver reading real wall-clock time from CMOS
-- Syscall interface via `int 0x80` (write, exit, getpid, read, sleep, readfile, writefile) with return values in `eax`
+- Syscall interface via `int 0x80` (write, exit, getpid, read, sleep, readfile, writefile, fork, exec, wait, waitpid, open, close, read_fd) with return values in `eax`
 - Faulting user processes are killed and control returns to the shell
 - COM1 serial debug console — all terminal output is mirrored (`qemu -serial stdio` or a serial cable on real hardware)
 - Ring 3 GDT segments, TSS, and `jump_to_usermode`
@@ -45,9 +59,13 @@ Earlier milestone (still true): ELF executables are loaded from the FAT32 disk �
 - Preemptive round-robin scheduler: PIT-driven context switches between a kernel task, foreground, and background processes
 - Foreground (`exec`) and background (`bg`) execution, with `ps` and `kill`
 - Process reaping: exited and killed processes are freed by the kernel task with no memory leak
+- `fork()` (full eager address-space copy) and in-place `exec()` that keeps the pid — the fork/exec pattern works
+- `wait()` / `waitpid()`: a process can spawn children and block until they exit, collecting the exit code
+- File-descriptor file I/O: `open`/`read`/`close` read a file incrementally, resuming from a cached cluster position (whole-file syscalls still available)
+- Blocking `read()`: a process waiting on the keyboard sleeps off the run queue and is woken on input, instead of busy-spinning
 - ELF executable loader (PT_LOAD segments into a process address space)
 - Kernel heap and VGA mappings live in the higher half, valid in every address space
-- Sample user programs (`user/hello.c`, interactive `user/echo.c`, file I/O `user/files.c`, background `user/counter.c`) built by `make user`, installed by `make disk`
+- Sample user programs (`user/hello.c`, interactive `user/echo.c`, file I/O `user/files.c`, background `user/counter.c`, `user/forktest.c`, `user/fdcat.c`) built by `make user`, installed by `make disk`
 - `fasterfetch` — a neofetch-style system info screen (CPU brand via CPUID, live memory and uptime, colour palette)
 - Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `exec`, `bg`, `ps`, `kill`, `time`, `uptime`, `free`, `fasterfetch`, `reboot`
 
@@ -60,9 +78,9 @@ Active development.
 **Upcoming work (roughly in order):**
 
 **Near term**
-- `fork`/`exec` separation and `wait`, so processes can spawn children
-- File-descriptor based file syscalls (open/read/write/close)
-- Sleeping/blocking instead of busy-waiting in `sys_read`
+- A user-space shell, now that `fork`/`exec`/`wait` exist to launch and reap programs
+- Writable file descriptors (incremental `write` to an fd, growing files cluster-by-cluster)
+- `dup`/redirection so programs can be wired together
 
 **Medium term**
 - VFS layer abstracting FAT32 behind a unified file interface
@@ -123,12 +141,20 @@ Active development.
 | Number | Name | Description |
 | :--- | :--- | :--- |
 | 0 | `sys_write` | Write buffer to terminal |
-| 1 | `sys_exit` | Terminate process, return to shell |
+| 1 | `sys_exit` | Terminate process (exit code in `ebx`) |
 | 2 | `sys_getpid` | Get current process ID |
-| 3 | `sys_read` | Read keyboard input (blocks until at least 1 byte) |
+| 3 | `sys_read` | Read keyboard input (blocks, sleeping, until at least 1 byte) |
 | 4 | `sys_sleep` | Sleep for N milliseconds |
 | 5 | `sys_readfile` | Read a whole file from disk into a buffer |
 | 6 | `sys_writefile` | Write a buffer to a file, replacing its contents |
+| 7 | `sys_fork` | Duplicate the calling process (returns child pid / 0) |
+| 8 | `sys_exec` | Replace the current program with the named ELF (keeps pid) |
+| 9 | `sys_wait` | Block until any child exits; returns its pid, code via `ebx` |
+| 10 | `sys_waitpid` | Block until the child in `ebx` exits; code via `ecx` |
+| 11 | `sys_open` | Open a file, returns a small fd (or -1) |
+| 12 | `sys_close` | Close an fd |
+| 13 | `sys_read_fd` | Read up to N bytes from an fd, resuming from its position |
+| 14 | `sys_write_fd` | Reserved; incremental fd writes not yet supported (returns -1) |
 
 ### Compilation Flags
 
@@ -184,11 +210,12 @@ make clean  # Remove all build artifacts
 
 ### Automated boot test
 
-`tools/boot-test.sh` boots the ISO headlessly in QEMU, types
-`exec HELLO.ELF` and `exec CRASH.ELF` into the shell through the QEMU
-monitor, and checks the serial log for the expected output (user
-program ran in ring 3, crashed program was killed cleanly). CI runs it
-on every push.
+`tools/boot-test.sh` boots the ISO headlessly in QEMU, drives the shell
+through the QEMU monitor, and checks the serial log for expected output:
+a user program running in ring 3, a crashing program being killed
+cleanly, a background program running concurrently, `fork`/`exec`/`wait`
+(via `FORKTEST.ELF`), and incremental fd reads (via `FDCAT.ELF`). CI
+runs it on every push.
 
 ---
 

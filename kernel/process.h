@@ -22,6 +22,21 @@
 #define USER_STACK_PAGE 0xBFFFF000
 #define USER_STACK_TOP  0xBFFFFFF0
 
+// Per-process open file table. An open fd caches its position in the
+// FAT cluster chain so sequential reads resume without re-walking from
+// the first cluster every call. Read-only for now; no kernel resources
+// are held, so closing/exiting needs no cleanup. An unused slot is {0}.
+#define MAX_FDS 8
+typedef struct
+{
+    int      in_use;
+    uint32_t first_cluster;
+    uint32_t cur_cluster;    // cluster the next byte comes from
+    uint32_t cluster_offset; // bytes already consumed within cur_cluster
+    uint32_t pos;            // absolute read position, for EOF
+    uint32_t size;           // total file size
+} file_desc_t;
+
 typedef struct process
 {
     uint32_t pid;
@@ -47,6 +62,9 @@ typedef struct process
     // Why (and on what) this process is blocked, if state == BLOCKED
     int      block_reason;  // BLOCK_NONE / BLOCK_WAIT / BLOCK_READ
     uint32_t wait_target;   // for BLOCK_WAIT: child pid, or 0 for "any child"
+
+    // Open files (fd index = slot index)
+    file_desc_t fds[MAX_FDS];
 
     // Linked list (scheduler ready queue, blocked list, or zombie list)
     struct process* next;

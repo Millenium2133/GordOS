@@ -591,9 +591,13 @@ done:
     return count;
 }
 
-int fat32_read_file(const char* path, void* buffer, uint32_t bufsize, uint32_t* size)
+// Look up a file by path and return its first cluster + size WITHOUT
+// reading the contents. Factored out of fat32_read_file so fd-based
+// opens can seek without slurping the whole file. Returns 0 on success,
+// -1 if the path or file doesn't exist.
+int fat32_lookup_file(const char* path, uint32_t* first_cluster, uint32_t* size)
 {
-    if (!path || !buffer || !size)
+    if (!path || !first_cluster || !size)
         return -1;
 
     uint32_t cluster;
@@ -606,8 +610,6 @@ int fat32_read_file(const char* path, void* buffer, uint32_t bufsize, uint32_t* 
     if (!buf)
         return -1;
 
-    uint32_t file_cluster = 0;
-    uint32_t file_size    = 0;
     int found = 0;
 
     while (cluster >= 2 && cluster < FAT32_EOC && !found)
@@ -623,7 +625,7 @@ int fat32_read_file(const char* path, void* buffer, uint32_t bufsize, uint32_t* 
             uint8_t* e = buf + (i * 32);
 
             if (e[0] == 0x00)
-                goto not_found;
+                goto done;
 
             if ((uint8_t)e[0] == 0xE5)
                 continue;
@@ -659,8 +661,8 @@ int fat32_read_file(const char* path, void* buffer, uint32_t bufsize, uint32_t* 
 
             if (match)
             {
-                file_cluster = ((uint32_t)read16(e, 20) << 16) | read16(e, 26);
-                file_size    = read32(e, 28);
+                *first_cluster = ((uint32_t)read16(e, 20) << 16) | read16(e, 26);
+                *size          = read32(e, 28);
                 found = 1;
                 break;
             }
@@ -669,12 +671,24 @@ int fat32_read_file(const char* path, void* buffer, uint32_t bufsize, uint32_t* 
         cluster = fat_next_cluster(cluster);
     }
 
-not_found:
-    if (!found)
-    {
-        kfree(buf);
+done:
+    kfree(buf);
+    return found ? 0 : -1;
+}
+
+int fat32_read_file(const char* path, void* buffer, uint32_t bufsize, uint32_t* size)
+{
+    if (!path || !buffer || !size)
         return -1;
-    }
+
+    uint32_t file_cluster = 0;
+    uint32_t file_size    = 0;
+    if (fat32_lookup_file(path, &file_cluster, &file_size) != 0)
+        return -1;
+
+    uint8_t* buf = kmalloc(sectors_per_cluster * 512);
+    if (!buf)
+        return -1;
 
     // Never read more than the caller's buffer can hold
     if (file_size > bufsize)
@@ -682,7 +696,7 @@ not_found:
 
     uint32_t bytes_read = 0;
     uint8_t* out = (uint8_t*)buffer;
-    cluster = file_cluster;
+    uint32_t cluster = file_cluster;
 
     while (cluster >= 2 && cluster < FAT32_EOC && bytes_read < file_size)
     {
@@ -704,6 +718,23 @@ not_found:
     *size = bytes_read;
     kfree(buf);
     return 0;
+}
+
+// Public cluster-walk primitives, so the fd layer can resume sequential
+// reads from a cached position instead of re-walking the chain.
+uint32_t fat32_cluster_size(void)
+{
+    return sectors_per_cluster * 512;
+}
+
+uint32_t fat32_next_cluster(uint32_t cluster)
+{
+    return fat_next_cluster(cluster);
+}
+
+int fat32_read_cluster(uint32_t cluster, void* buffer)
+{
+    return read_cluster(cluster, (uint8_t*)buffer);
 }
 
 int fat32_write_file(const char* path, const void* buffer, uint32_t size)

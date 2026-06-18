@@ -35,8 +35,14 @@ static int sys_write(const char* buf, uint32_t len)
 }
 
 // sys_read: read up to ecx bytes of keyboard input into ebx.
-// Blocks until at least one byte is available, then returns whatever
-// is buffered. Consumed characters are echoed to the terminal.
+// Blocks until at least one byte is available, then returns whatever is
+// buffered. Consumed characters are echoed to the terminal.
+//
+// We run in syscall context with interrupts disabled, so draining the
+// ring buffer and then deciding to block is atomic against the keyboard
+// IRQ — no lost wakeup. When there's nothing to read we sleep on the
+// scheduler (BLOCK_READ) instead of spinning; the keyboard handler wakes
+// us when it delivers a character.
 static int sys_read(char* buf, uint32_t len)
 {
     if (!user_range_ok(buf, len))
@@ -46,11 +52,7 @@ static int sys_read(char* buf, uint32_t len)
 
     uint32_t got = 0;
 
-    // The int 0x80 gate cleared IF; re-enable interrupts so the
-    // keyboard IRQ can fill the buffer while we wait
-    asm volatile("sti");
-
-    while (got == 0)
+    for (;;)
     {
         int c;
         while (got < len && (c = keyboard_read_char()) >= 0)
@@ -64,11 +66,14 @@ static int sys_read(char* buf, uint32_t len)
                 terminal_putchar((char)c);
         }
 
-        if (got == 0)
-            asm volatile("hlt");
+        if (got > 0)
+            break;
+
+        // Nothing buffered — block until the keyboard delivers input.
+        scheduler_block(BLOCK_READ, 0);
+        scheduler_switch();
     }
 
-    asm volatile("cli");
     return (int)got;
 }
 
@@ -127,6 +132,114 @@ static int sys_writefile(const char* upath, const char* buf, uint32_t len)
         return -1;
 
     return fat32_write_file(path, buf, len);
+}
+
+// sys_open: open the file named by ebx (flags in ecx are reserved and
+// currently ignored — read-only). Returns a small fd index, or -1 if
+// the file isn't found or the process has no free fd slot.
+static int sys_open(const char* upath, uint32_t flags)
+{
+    (void)flags;
+
+    char path[256];
+    if (copy_user_path(upath, path, sizeof(path)) != 0)
+        return -1;
+
+    uint32_t first_cluster = 0, size = 0;
+    if (fat32_lookup_file(path, &first_cluster, &size) != 0)
+        return -1;
+
+    process_t* me = current_process;
+    if (!me)
+        return -1;
+
+    for (int fd = 0; fd < MAX_FDS; fd++)
+    {
+        if (!me->fds[fd].in_use)
+        {
+            me->fds[fd].in_use         = 1;
+            me->fds[fd].first_cluster  = first_cluster;
+            me->fds[fd].cur_cluster    = first_cluster;
+            me->fds[fd].cluster_offset = 0;
+            me->fds[fd].pos            = 0;
+            me->fds[fd].size           = size;
+            return fd;
+        }
+    }
+    return -1; // no free slot
+}
+
+// sys_read_fd: read up to len bytes from an open fd into a user buffer,
+// resuming from the fd's cached cluster position. Returns the number of
+// bytes read (0 at EOF), or -1 on a bad fd/buffer.
+static int sys_read_fd(int fd, char* buf, uint32_t len)
+{
+    process_t* me = current_process;
+    if (!me || fd < 0 || fd >= MAX_FDS || !me->fds[fd].in_use)
+        return -1;
+    if (!user_range_ok(buf, len))
+        return -1;
+    if (len == 0)
+        return 0;
+
+    file_desc_t* f = &me->fds[fd];
+    uint32_t cbytes = fat32_cluster_size();
+
+    uint8_t* cluster_buf = kmalloc(cbytes);
+    if (!cluster_buf)
+        return -1;
+
+    uint32_t got = 0;
+    while (got < len && f->pos < f->size &&
+           f->cur_cluster >= 2 && f->cur_cluster < FAT32_EOC)
+    {
+        if (fat32_read_cluster(f->cur_cluster, cluster_buf) != 0)
+            break;
+
+        uint32_t avail = cbytes - f->cluster_offset;       // left in this cluster
+        uint32_t left  = f->size - f->pos;                 // left in the file
+        uint32_t want  = len - got;                        // left to satisfy
+        uint32_t n = want;
+        if (n > avail) n = avail;
+        if (n > left)  n = left;
+
+        for (uint32_t i = 0; i < n; i++)
+            buf[got + i] = (char)cluster_buf[f->cluster_offset + i];
+
+        got              += n;
+        f->pos           += n;
+        f->cluster_offset += n;
+
+        // Step to the next cluster once this one is fully consumed
+        if (f->cluster_offset >= cbytes)
+        {
+            f->cur_cluster    = fat32_next_cluster(f->cur_cluster);
+            f->cluster_offset = 0;
+        }
+    }
+
+    kfree(cluster_buf);
+    return (int)got;
+}
+
+// sys_write_fd: incremental writes through an fd aren't supported — that
+// would mean growing files cluster-by-cluster and rewriting directory
+// sizes mid-stream. Use sys_writefile for whole-file writes. Returns -1.
+static int sys_write_fd(int fd, const char* buf, uint32_t len)
+{
+    (void)fd; (void)buf; (void)len;
+    return -1;
+}
+
+// sys_close: release an fd. Read fds hold no kernel resources, so this
+// just marks the slot free. Returns 0, or -1 on a bad fd.
+static int sys_close(int fd)
+{
+    process_t* me = current_process;
+    if (!me || fd < 0 || fd >= MAX_FDS || !me->fds[fd].in_use)
+        return -1;
+    me->fds[fd].in_use = 0;
+    return 0;
 }
 
 // sys_exec: replace the calling program with the one named by ebx.
@@ -267,6 +380,18 @@ void syscall_handler(struct registers* regs)
         case SYS_WAITPID:
             // ebx = child pid, ecx = user int* for the exit code (or 0)
             ret = sys_wait(regs->ebx, (int*)regs->ecx);
+            break;
+        case SYS_OPEN:
+            ret = sys_open((const char*)regs->ebx, regs->ecx);
+            break;
+        case SYS_CLOSE:
+            ret = sys_close((int)regs->ebx);
+            break;
+        case SYS_READ_FD:
+            ret = sys_read_fd((int)regs->ebx, (char*)regs->ecx, regs->edx);
+            break;
+        case SYS_WRITE_FD:
+            ret = sys_write_fd((int)regs->ebx, (const char*)regs->ecx, regs->edx);
             break;
         default:
             // Unknown syscall
