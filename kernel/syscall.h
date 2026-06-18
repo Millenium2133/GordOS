@@ -19,6 +19,7 @@
 #define SYS_CLOSE 12
 #define SYS_READ_FD 13
 #define SYS_WRITE_FD 14
+#define SYS_DUP2 15
 
 void syscall_init(void);
 void syscall_handler(struct registers* regs);

@@ -22,14 +22,28 @@
 #define USER_STACK_PAGE 0xBFFFF000
 #define USER_STACK_TOP  0xBFFFFFF0
 
-// Per-process open file table. An open fd caches its position in the
-// FAT cluster chain so sequential reads resume without re-walking from
-// the first cluster every call. Read-only for now; no kernel resources
-// are held, so closing/exiting needs no cleanup. An unused slot is {0}.
+// Per-process open file table. fd 0/1/2 are the standard streams
+// (stdin = keyboard, stdout/stderr = terminal); higher fds are files
+// opened with sys_open. A file read fd caches its position in the FAT
+// cluster chain so sequential reads resume without re-walking the chain;
+// a file write fd points at a refcounted write buffer flushed on close.
 #define MAX_FDS 8
+
+// fd kinds
+#define FD_NONE    0   // unused slot
+#define FD_FILE    1   // a regular file (read or, if writable, write)
+#define FD_TTY_IN  2   // stdin  — keyboard
+#define FD_TTY_OUT 3   // stdout/stderr — terminal
+
+struct wbuf;
+
 typedef struct
 {
-    int      in_use;
+    int      kind;           // FD_NONE if free
+    int      writable;       // FD_FILE opened for writing (uses wbuf)
+    struct wbuf* wbuf;       // write buffer when writable
+
+    // read state (FD_FILE, reading)
     uint32_t first_cluster;
     uint32_t cur_cluster;    // cluster the next byte comes from
     uint32_t cluster_offset; // bytes already consumed within cur_cluster

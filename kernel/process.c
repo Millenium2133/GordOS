@@ -8,6 +8,36 @@
 #include "idt.h"
 #include "elf.h"
 #include "usermode.h"
+#include "wbuf.h"
+
+// Set up a fresh fd table: standard streams open, everything else free.
+static void fd_init_std(file_desc_t* fds)
+{
+    for (int i = 0; i < MAX_FDS; i++)
+    {
+        fds[i].kind     = FD_NONE;
+        fds[i].writable = 0;
+        fds[i].wbuf     = 0;
+    }
+    fds[0].kind = FD_TTY_IN;   // stdin
+    fds[1].kind = FD_TTY_OUT;  // stdout
+    fds[2].kind = FD_TTY_OUT;  // stderr
+}
+
+// Drop this process's references to any writable fds (flushing on the
+// last reference). Called when a process exits or is torn down.
+static void fd_close_writable(process_t* proc)
+{
+    for (int i = 0; i < MAX_FDS; i++)
+    {
+        if (proc->fds[i].kind == FD_FILE && proc->fds[i].writable && proc->fds[i].wbuf)
+        {
+            wbuf_unref(proc->fds[i].wbuf);
+            proc->fds[i].wbuf = 0;
+            proc->fds[i].kind = FD_NONE;
+        }
+    }
+}
 
 // Defined in usermode.s: loads user segments and irets to ring 3
 // using the frame process_start() builds on the new kernel stack
@@ -105,8 +135,7 @@ void process_init(void)
     kernel_task.wait_target      = 0;
     kernel_task.next             = 0;
 
-    for (int i = 0; i < MAX_FDS; i++)
-        kernel_task.fds[i].in_use = 0;
+    fd_init_std(kernel_task.fds);
 
     current_process    = &kernel_task;
     foreground_process = 0;
@@ -151,8 +180,7 @@ process_t* process_create(void)
     proc->wait_target  = 0;
     proc->next         = 0;
 
-    for (int i = 0; i < MAX_FDS; i++)
-        proc->fds[i].in_use = 0;
+    fd_init_std(proc->fds);
 
     return proc;
 }
@@ -206,9 +234,14 @@ process_t* process_fork(struct registers* regs)
 
     child->parent_pid = parent->pid;
 
-    // Child inherits the parent's open files (positions and all)
+    // Child inherits the parent's open files (positions and all). A
+    // writable fd's buffer is shared, so bump its refcount.
     for (int i = 0; i < MAX_FDS; i++)
+    {
         child->fds[i] = parent->fds[i];
+        if (child->fds[i].kind == FD_FILE && child->fds[i].writable)
+            wbuf_ref(child->fds[i].wbuf);
+    }
 
     // Eager full copy of the parent's user address space
     if (paging_copy_address_space(parent->page_directory, child->page_directory) != 0)
@@ -304,6 +337,10 @@ void process_exit(void)
     if (foreground_process == proc)
         foreground_process = 0;
 
+    // Flush and release any redirected output before we leave (so
+    // `cmd > file` persists even if the program never closed the fd).
+    fd_close_writable(proc);
+
     // Record the exit so the parent's wait() can collect it, and wake the
     // parent if it's already blocked in wait. Skip kernel-task children
     // (pid 0 never waits) so their records don't fill the table.
@@ -359,6 +396,10 @@ void process_destroy(process_t* proc)
 {
     if (!proc || proc == &kernel_task)
         return;
+
+    // Release any writable fds still open (e.g. a killed process that
+    // never reached process_exit). Flushes on the last reference.
+    fd_close_writable(proc);
 
     if (proc->page_directory)
         paging_destroy_address_space(proc->page_directory);

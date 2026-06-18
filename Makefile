@@ -44,7 +44,8 @@ OBJS = \
 	kernel/process.o \
 	kernel/scheduler.o \
 	kernel/scheduler_asm.o \
-	kernel/elf.o
+	kernel/elf.o \
+	kernel/wbuf.o
 
 # +------------------+
 # + Primary Targets  +
@@ -206,6 +207,9 @@ kernel/scheduler_asm.o: kernel/scheduler.s
 
 kernel/elf.o: kernel/elf.c kernel/elf.h kernel/process.h memory/paging.h memory/pmm.h lib/string.h
 	$(CC) $(CFLAGS) -c kernel/elf.c -o kernel/elf.o
+
+kernel/wbuf.o: kernel/wbuf.c kernel/wbuf.h fs/fat32.h memory/kmalloc.h lib/string.h
+	$(CC) $(CFLAGS) -c kernel/wbuf.c -o kernel/wbuf.o
 
 # +------------------+
 # + User Programs    +
