@@ -203,3 +203,13 @@ mcopy -i disk.img myfile.txt ::myfile.txt
 - Shell currently runs in ring 0
 - Kernel heap is limited to the identity-mapped low 4MB of physical memory
 - SFN collision resolution uses `~1` suffix only; multiple files with the same first-6-char base will alias (rare in practice)
+
+  ## Star History
+
+<a href="https://www.star-history.com/?repos=Millenium2133%2FGordOS&type=timeline&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Millenium2133/GordOS&type=timeline&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Millenium2133/GordOS&type=timeline&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Millenium2133/GordOS&type=timeline&legend=top-left" />
+ </picture>
+</a>
