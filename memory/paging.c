@@ -11,7 +11,11 @@ extern uint32_t boot_page_directory[1024];
 // no extra setup needed. fork and the ELF loader never run at the same
 // time (the kernel is single-threaded with interrupts off during a
 // syscall), so a separate address just keeps their uses from aliasing.
-#define FORK_SCRATCH_VIRT 0xC0401000
+#define FORK_SCRATCH_VIRT  0xC0401000
+
+// Third scratch window for building user stack frames (argc/argv). Same
+// shared 4MB table, distinct page from the other two scratch windows.
+#define STACK_SCRATCH_VIRT 0xC0402000
 
 // Pre-allocated page tables for user space mappings, managed as a
 // free list so tables return to the pool when an address space is
@@ -288,4 +292,79 @@ void paging_switch_address_space(uint32_t* page_directory)
 void paging_switch_to_kernel(void)
 {
     paging_switch_address_space(boot_page_directory);
+}
+
+#define STACK_MAX_ARGS 16
+#define STACK_MAX_ARG_LEN 256
+
+uint32_t paging_build_user_stack(void* stack_phys, uint32_t user_page_base,
+                                  const char* cmdline)
+{
+    // Map the physical stack page into the kernel scratch window
+    paging_map_page(STACK_SCRATCH_VIRT, (uint32_t)stack_phys,
+                    PAGE_PRESENT | PAGE_WRITEABLE);
+    uint8_t* page = (uint8_t*)STACK_SCRATCH_VIRT;
+
+    memset(page, 0, 0x1000);
+
+    // Tokenise cmdline
+    char tokens[STACK_MAX_ARGS][STACK_MAX_ARG_LEN];
+    int argc = 0;
+    const char* p = cmdline ? cmdline : "";
+    while (*p && argc < STACK_MAX_ARGS)
+    {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        int j = 0;
+        while (*p && *p != ' ' && j < STACK_MAX_ARG_LEN - 1)
+            tokens[argc][j++] = *p++;
+        tokens[argc][j] = '\0';
+        argc++;
+    }
+
+    // Pack argument strings from the top of the page downward (highest
+    // index first so argv[0] ends up lowest, but order doesn't matter
+    // since we track each string's user-space virtual address).
+    int top = 0x1000;
+    uint32_t str_user_ptrs[STACK_MAX_ARGS];
+
+    for (int i = argc - 1; i >= 0; i--)
+    {
+        int slen = 0;
+        while (tokens[i][slen]) slen++;
+        slen++;  // include NUL
+        top -= slen;
+        for (int k = 0; k < slen; k++)
+            page[top + k] = tokens[i][k];
+        str_user_ptrs[i] = user_page_base + (uint32_t)top;
+    }
+
+    // Align to 4 bytes
+    top &= ~3;
+
+    // argv pointer array: NULL sentinel first (growing downward)
+    top -= 4;
+    *(uint32_t*)(page + top) = 0;
+    for (int i = argc - 1; i >= 0; i--)
+    {
+        top -= 4;
+        *(uint32_t*)(page + top) = str_user_ptrs[i];
+    }
+
+    // argv_user_addr is the address of argv[0] in user space
+    uint32_t argv_user_addr = user_page_base + (uint32_t)top;
+
+    // Standard C i686 _start frame:
+    //   [esp]    = fake return address (0)
+    //   [esp+4]  = argc
+    //   [esp+8]  = argv  (pointer to argv[0])
+    //   [esp+12] = envp  (NULL)
+    top -= 4; *(uint32_t*)(page + top) = 0;              // envp
+    top -= 4; *(uint32_t*)(page + top) = argv_user_addr; // argv
+    top -= 4; *(uint32_t*)(page + top) = (uint32_t)argc; // argc
+    top -= 4; *(uint32_t*)(page + top) = 0;              // fake return addr
+
+    paging_unmap_page(STACK_SCRATCH_VIRT);
+
+    return user_page_base + (uint32_t)top;
 }

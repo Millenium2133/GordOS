@@ -7,6 +7,7 @@
 #include "fat32.h"
 #include "kmalloc.h"
 #include "wbuf.h"
+#include "pipe.h"
 
 void terminal_writestring(const char* data);
 void terminal_putchar(char c);
@@ -35,6 +36,50 @@ static int file_write(file_desc_t* f, const char* buf, uint32_t len)
     return wbuf_write(f->wbuf, buf, len);
 }
 
+// Write bytes into a pipe, blocking if the buffer is full. Wakes a
+// blocked reader after each write. Returns broken-pipe (-1) if all
+// read ends are closed.
+static int pipe_write_fd(pipe_t* p, const char* buf, uint32_t len)
+{
+    if (!p->read_open)
+        return -1;
+
+    uint32_t written = 0;
+    while (written < len)
+    {
+        int used  = (p->head - p->tail + PIPE_BUF_SIZE) % PIPE_BUF_SIZE;
+        int space = PIPE_BUF_SIZE - 1 - used;
+
+        if (space > 0)
+        {
+            uint32_t n = (uint32_t)space < (len - written)
+                         ? (uint32_t)space : (len - written);
+            for (uint32_t i = 0; i < n; i++)
+            {
+                p->buf[p->head] = buf[written + i];
+                p->head = (p->head + 1) % PIPE_BUF_SIZE;
+            }
+            written += n;
+            if (p->blocked_reader)
+            {
+                scheduler_wake(p->blocked_reader);
+                p->blocked_reader = 0;
+            }
+        }
+        else if (!p->read_open)
+        {
+            break;
+        }
+        else
+        {
+            p->blocked_writer = current_process;
+            scheduler_block(BLOCK_PIPE_WRITE, 0);
+            scheduler_switch();
+        }
+    }
+    return (int)written;
+}
+
 // Write to an fd, dispatching on its kind. stdout/stderr go to the
 // terminal; a writable file fd accumulates into its buffer.
 static int do_fd_write(int fd, const char* buf, uint32_t len)
@@ -50,6 +95,8 @@ static int do_fd_write(int fd, const char* buf, uint32_t len)
         return tty_write(buf, len);
     if (f->kind == FD_FILE)
         return file_write(f, buf, len);
+    if (f->kind == FD_PIPE_WRITE)
+        return pipe_write_fd((pipe_t*)f->pipe, buf, len);
     return -1; // e.g. writing to stdin
 }
 
@@ -138,6 +185,39 @@ static int file_read(file_desc_t* f, char* buf, uint32_t len)
     return (int)got;
 }
 
+// Read bytes from a pipe, blocking while it's empty (but the write end
+// is still open). Returns 0 when empty and write end is fully closed
+// (EOF). Returns the number of bytes read otherwise.
+static int pipe_read_fd(pipe_t* p, char* buf, uint32_t len)
+{
+    for (;;)
+    {
+        int avail = (p->head - p->tail + PIPE_BUF_SIZE) % PIPE_BUF_SIZE;
+        if (avail > 0)
+        {
+            uint32_t n = (uint32_t)avail < len ? (uint32_t)avail : len;
+            for (uint32_t i = 0; i < n; i++)
+            {
+                buf[i] = p->buf[p->tail];
+                p->tail = (p->tail + 1) % PIPE_BUF_SIZE;
+            }
+            if (p->blocked_writer)
+            {
+                scheduler_wake(p->blocked_writer);
+                p->blocked_writer = 0;
+            }
+            return (int)n;
+        }
+
+        if (!p->write_open)
+            return 0; // EOF
+
+        p->blocked_reader = current_process;
+        scheduler_block(BLOCK_PIPE_READ, 0);
+        scheduler_switch();
+    }
+}
+
 // Read from an fd, dispatching on its kind.
 static int do_fd_read(int fd, char* buf, uint32_t len)
 {
@@ -154,6 +234,8 @@ static int do_fd_read(int fd, char* buf, uint32_t len)
         return tty_read(buf, len);
     if (f->kind == FD_FILE)
         return file_read(f, buf, len);
+    if (f->kind == FD_PIPE_READ)
+        return pipe_read_fd((pipe_t*)f->pipe, buf, len);
     return -1; // e.g. reading from stdout
 }
 
@@ -285,7 +367,8 @@ static int sys_write_fd(int fd, const char* buf, uint32_t len)
 }
 
 // sys_close: release an fd. A writable fd flushes to disk when its last
-// reference is dropped. Returns 0, or -1 on a bad fd.
+// reference is dropped; a pipe end wakes any blocked peer. Returns 0
+// on success, -1 on a bad fd.
 static int sys_close(int fd)
 {
     process_t* me = current_process;
@@ -295,9 +378,25 @@ static int sys_close(int fd)
     if (me->fds[fd].kind == FD_FILE && me->fds[fd].writable)
         wbuf_unref(me->fds[fd].wbuf);
 
+    if (me->fds[fd].kind == FD_PIPE_READ && me->fds[fd].pipe)
+    {
+        pipe_t* p = (pipe_t*)me->fds[fd].pipe;
+        pipe_close_read(p);
+        if (p->blocked_writer) { scheduler_wake(p->blocked_writer); p->blocked_writer = 0; }
+        if (p->read_open <= 0 && p->write_open <= 0) pipe_destroy(p);
+    }
+    else if (me->fds[fd].kind == FD_PIPE_WRITE && me->fds[fd].pipe)
+    {
+        pipe_t* p = (pipe_t*)me->fds[fd].pipe;
+        pipe_close_write(p);
+        if (p->blocked_reader) { scheduler_wake(p->blocked_reader); p->blocked_reader = 0; }
+        if (p->read_open <= 0 && p->write_open <= 0) pipe_destroy(p);
+    }
+
     me->fds[fd].kind     = FD_NONE;
     me->fds[fd].writable = 0;
     me->fds[fd].wbuf     = 0;
+    me->fds[fd].pipe     = 0;
     return 0;
 }
 
@@ -315,28 +414,67 @@ static int sys_dup2(int oldfd, int newfd)
     if (oldfd == newfd)
         return newfd;
 
-    // Close the old target of newfd (flushes a writable buffer)
-    if (me->fds[newfd].kind == FD_FILE && me->fds[newfd].writable)
-        wbuf_unref(me->fds[newfd].wbuf);
+    // Close whatever newfd currently holds (flush a writable buffer, or
+    // release a pipe end)
+    sys_close(newfd);
 
     me->fds[newfd] = me->fds[oldfd];
 
-    // Both fds now share a writable buffer — count the new reference
+    // Both fds now share a resource — bump the new reference count
     if (me->fds[newfd].kind == FD_FILE && me->fds[newfd].writable)
         wbuf_ref(me->fds[newfd].wbuf);
+    if (me->fds[newfd].kind == FD_PIPE_READ && me->fds[newfd].pipe)
+        ((pipe_t*)me->fds[newfd].pipe)->read_open++;
+    if (me->fds[newfd].kind == FD_PIPE_WRITE && me->fds[newfd].pipe)
+        ((pipe_t*)me->fds[newfd].pipe)->write_open++;
 
     return newfd;
 }
 
 // sys_exec: replace the calling program with the one named by ebx.
-// Reads the file into a kernel buffer, then hands it (and ownership)
-// to process_exec, which enters the new program and never returns on
-// success. Returns -1 only if the file is missing or not a valid ELF.
-static int sys_exec(const char* upath)
+// ecx is an optional NULL-terminated user-space argv array (char**);
+// pass 0 / NULL to use just the path as argv[0].
+// Reads the file into a kernel buffer, builds a cmdline from the argv,
+// then hands everything to process_exec which never returns on success.
+static int sys_exec(const char* upath, const char** uargv)
 {
     char path[256];
     if (copy_user_path(upath, path, sizeof(path)) != 0)
         return -1;
+
+    // Build a space-delimited cmdline from the argv array so
+    // paging_build_user_stack can tokenise it back into argc/argv.
+    char cmdline[512];
+    int  clen = 0;
+
+    if (uargv && user_range_ok(uargv, sizeof(char*)))
+    {
+        for (int i = 0; i < 16; i++)
+        {
+            // Validate each pointer element lives in user space
+            if (!user_range_ok(uargv + i, sizeof(char*)))
+                break;
+            const char* uarg = uargv[i];
+            if (!uarg)
+                break;
+
+            char argbuf[256];
+            if (copy_user_path(uarg, argbuf, sizeof(argbuf)) != 0)
+                break;
+
+            if (clen > 0 && clen < 510)
+                cmdline[clen++] = ' ';
+            for (int j = 0; argbuf[j] && clen < 510; j++)
+                cmdline[clen++] = argbuf[j];
+        }
+    }
+
+    if (clen == 0)
+    {
+        for (int i = 0; path[i] && clen < 510; i++)
+            cmdline[clen++] = path[i];
+    }
+    cmdline[clen] = '\0';
 
     void* buf = kmalloc(65536);
     if (!buf)
@@ -351,7 +489,60 @@ static int sys_exec(const char* upath)
 
     // process_exec takes ownership of buf (frees it). Only returns on
     // failure, with the caller's program still intact.
-    return process_exec(current_process, buf, size);
+    return process_exec(current_process, buf, size, cmdline);
+}
+
+// sys_give_foreground: hand keyboard focus to the process with the given
+// pid. The calling process loses focus; the target gains it. This lets a
+// user-space shell give keyboard input to a child it just forked.
+static int sys_give_foreground(uint32_t pid)
+{
+    process_t* target = scheduler_find_any(pid);
+    if (!target)
+        return -1;
+
+    // Transfer focus
+    target->foreground = 1;
+    foreground_process = target;
+    return 0;
+}
+
+// sys_pipe: create an anonymous pipe. ebx points to a user int[2] that
+// receives [read_fd, write_fd]. Returns 0 on success, -1 on failure.
+static int sys_pipe(int* user_fds)
+{
+    if (!user_range_ok(user_fds, 2 * sizeof(int)))
+        return -1;
+
+    process_t* me = current_process;
+    if (!me)
+        return -1;
+
+    // Find two free fd slots
+    int rfd = -1, wfd = -1;
+    for (int i = 0; i < MAX_FDS; i++)
+    {
+        if (me->fds[i].kind == FD_NONE)
+        {
+            if (rfd < 0)       rfd = i;
+            else if (wfd < 0) { wfd = i; break; }
+        }
+    }
+    if (rfd < 0 || wfd < 0)
+        return -1;
+
+    pipe_t* p = pipe_create();
+    if (!p)
+        return -1;
+
+    me->fds[rfd].kind = FD_PIPE_READ;
+    me->fds[rfd].pipe = p;
+    me->fds[wfd].kind = FD_PIPE_WRITE;
+    me->fds[wfd].pipe = p;
+
+    user_fds[0] = rfd;
+    user_fds[1] = wfd;
+    return 0;
 }
 
 // sys_exit: tear down the calling process. The scheduler switches to
@@ -457,7 +648,8 @@ void syscall_handler(struct registers* regs)
             break;
         }
         case SYS_EXEC:
-            ret = sys_exec((const char*)regs->ebx);
+            // ebx = path, ecx = argv (user char**, or 0 for no args)
+            ret = sys_exec((const char*)regs->ebx, (const char**)regs->ecx);
             break;
         case SYS_WAIT:
             // ebx = user int* for the exit code (or 0); waits for any child
@@ -481,6 +673,12 @@ void syscall_handler(struct registers* regs)
             break;
         case SYS_DUP2:
             ret = sys_dup2((int)regs->ebx, (int)regs->ecx);
+            break;
+        case SYS_GIVE_FOREGROUND:
+            ret = sys_give_foreground(regs->ebx);
+            break;
+        case SYS_PIPE:
+            ret = sys_pipe((int*)regs->ebx);
             break;
         default:
             // Unknown syscall

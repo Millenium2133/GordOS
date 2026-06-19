@@ -38,9 +38,12 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 - Blocking `read()`: a process waiting on the keyboard sleeps off the run queue and is woken on input
 - Standard streams (stdin/stdout/stderr as fds 0/1/2) with `write`/`read` routed through them
 - Writable file descriptors and `dup2`, enabling `cmd > file` style output redirection
-- A user-space shell (`user/ush.c`) that forks/execs programs and redirects their output, run with `exec USH.ELF`
+- A user-space shell (`user/ush.c`) that forks/execs programs, passes arguments, redirects output, and connects programs with pipes; run with `exec USH.ELF`
+- Argument passing (argc/argv) to user programs across both kernel-shell `exec`/`bg` and `SYS_EXEC`
+- Keyboard focus handoff (`SYS_GIVE_FOREGROUND`): user-space shell hands the terminal to interactive children and reclaims it when they exit
+- Anonymous pipes (`SYS_PIPE`): `FD_PIPE_READ`/`FD_PIPE_WRITE` fd kinds with blocking reads/writes and automatic EOF on last write-end close
 - ELF executable loader (PT_LOAD segments into a process address space)
-- Sample user programs: `user/hello.c`, `user/echo.c`, `user/files.c`, `user/counter.c`, `user/forktest.c`, `user/fdcat.c`, `user/redir.c`, `user/ush.c`
+- Sample user programs: `user/hello.c`, `user/echo.c`, `user/files.c`, `user/counter.c`, `user/forktest.c`, `user/fdcat.c`, `user/redir.c`, `user/cat2.c`, `user/ush.c`
 - `fasterfetch` — a neofetch-style system info screen (CPU brand via CPUID, live memory and uptime, colour palette)
 - Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `exec`, `bg`, `ps`, `kill`, `time`, `uptime`, `free`, `fasterfetch`, `reboot`
 
@@ -51,11 +54,6 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 Active development. Working towards hosting a C compiler.
 
 **Near term**
-- Argument passing to programs (argc/argv across `exec`)
-- Letting a user-space shell hand keyboard focus to an interactive child, then reclaim it
-- Pipes (`cmd1 | cmd2`)
-
-**Medium term**
 - VFS layer abstracting FAT32 behind a unified file interface
 - Groundwork for hosting a C compiler (tcc or similar)
 
@@ -120,6 +118,8 @@ Active development. Working towards hosting a C compiler.
 | 13 | `sys_read_fd` | Read up to N bytes from an fd, resuming from its position |
 | 14 | `sys_write_fd` | Write N bytes to an fd (terminal, or a file's write buffer) |
 | 15 | `sys_dup2` | Make `ecx` refer to the same open file as `ebx` (redirection) |
+| 16 | `sys_give_foreground` | Transfer keyboard focus to the process with pid `ebx` |
+| 17 | `sys_pipe` | Create an anonymous pipe; `ebx` = user `int[2]` filled with `[read_fd, write_fd]` |
 
 Syscall convention: number in `eax`, args in `ebx`/`ecx`/`edx`, return value in `eax`.
 

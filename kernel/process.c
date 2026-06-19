@@ -9,6 +9,7 @@
 #include "elf.h"
 #include "usermode.h"
 #include "wbuf.h"
+#include "pipe.h"
 
 // Set up a fresh fd table: standard streams open, everything else free.
 static void fd_init_std(file_desc_t* fds)
@@ -18,6 +19,7 @@ static void fd_init_std(file_desc_t* fds)
         fds[i].kind     = FD_NONE;
         fds[i].writable = 0;
         fds[i].wbuf     = 0;
+        fds[i].pipe     = 0;
     }
     fds[0].kind = FD_TTY_IN;   // stdin
     fds[1].kind = FD_TTY_OUT;  // stdout
@@ -35,6 +37,46 @@ static void fd_close_writable(process_t* proc)
             wbuf_unref(proc->fds[i].wbuf);
             proc->fds[i].wbuf = 0;
             proc->fds[i].kind = FD_NONE;
+        }
+    }
+}
+
+// Close any open pipe fds held by this process: decrements the pipe's
+// reference count and wakes any process blocked on the other end.
+// Sets the fd slot to FD_NONE so double-calls are safe.
+static void fd_close_pipes(process_t* proc)
+{
+    for (int i = 0; i < MAX_FDS; i++)
+    {
+        pipe_t* p = (pipe_t*)proc->fds[i].pipe;
+        if (!p)
+            continue;
+
+        if (proc->fds[i].kind == FD_PIPE_READ)
+        {
+            pipe_close_read(p);
+            if (p->blocked_writer)
+            {
+                scheduler_wake(p->blocked_writer);
+                p->blocked_writer = 0;
+            }
+            if (p->read_open <= 0 && p->write_open <= 0)
+                pipe_destroy(p);
+            proc->fds[i].kind = FD_NONE;
+            proc->fds[i].pipe = 0;
+        }
+        else if (proc->fds[i].kind == FD_PIPE_WRITE)
+        {
+            pipe_close_write(p);
+            if (p->blocked_reader)
+            {
+                scheduler_wake(p->blocked_reader);
+                p->blocked_reader = 0;
+            }
+            if (p->read_open <= 0 && p->write_open <= 0)
+                pipe_destroy(p);
+            proc->fds[i].kind = FD_NONE;
+            proc->fds[i].pipe = 0;
         }
     }
 }
@@ -234,13 +276,17 @@ process_t* process_fork(struct registers* regs)
 
     child->parent_pid = parent->pid;
 
-    // Child inherits the parent's open files (positions and all). A
-    // writable fd's buffer is shared, so bump its refcount.
+    // Child inherits the parent's open files (positions and all). Shared
+    // resources (write buffers, pipe ends) need their refcounts bumped.
     for (int i = 0; i < MAX_FDS; i++)
     {
         child->fds[i] = parent->fds[i];
         if (child->fds[i].kind == FD_FILE && child->fds[i].writable)
             wbuf_ref(child->fds[i].wbuf);
+        if (child->fds[i].kind == FD_PIPE_READ && child->fds[i].pipe)
+            ((pipe_t*)child->fds[i].pipe)->read_open++;
+        if (child->fds[i].kind == FD_PIPE_WRITE && child->fds[i].pipe)
+            ((pipe_t*)child->fds[i].pipe)->write_open++;
     }
 
     // Eager full copy of the parent's user address space
@@ -279,7 +325,8 @@ process_t* process_fork(struct registers* regs)
     return child;
 }
 
-int process_exec(process_t* proc, void* elf_data, uint32_t elf_size)
+int process_exec(process_t* proc, void* elf_data, uint32_t elf_size,
+                 const char* cmdline)
 {
     if (!proc || !elf_data)
     {
@@ -306,15 +353,16 @@ int process_exec(process_t* proc, void* elf_data, uint32_t elf_size)
     paging_clear_user_space(proc->page_directory);
     paging_switch_address_space(proc->page_directory);
 
-    // Load the new program and give it a fresh user stack.
+    // Load the new program and give it a fresh user stack with argc/argv.
     uint32_t entry = elf_load(proc, elf_data, elf_size);
     void* stack_phys = entry ? pmm_alloc_page() : 0;
     if (entry && stack_phys &&
         paging_map_page_in(proc->page_directory, USER_STACK_PAGE, (uint32_t)stack_phys,
                            PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER) == 0)
     {
+        uint32_t user_esp = paging_build_user_stack(stack_phys, USER_STACK_PAGE, cmdline);
         kfree(elf_data);
-        jump_to_usermode(entry, USER_STACK_TOP); // never returns
+        jump_to_usermode(entry, user_esp); // never returns
     }
 
     // Out of memory after we already tore the old program down — nothing
@@ -334,12 +382,26 @@ void process_exit(void)
     if (!proc || proc == &kernel_task)
         return;
 
+    // Hand keyboard focus back to the parent (if any) so a user-space
+    // shell regains its prompt after its foreground child exits.
     if (foreground_process == proc)
+    {
         foreground_process = 0;
+        if (proc->parent_pid != 0)
+        {
+            process_t* parent = scheduler_find_any(proc->parent_pid);
+            if (parent)
+            {
+                parent->foreground = 1;
+                foreground_process = parent;
+            }
+        }
+    }
 
     // Flush and release any redirected output before we leave (so
     // `cmd > file` persists even if the program never closed the fd).
     fd_close_writable(proc);
+    fd_close_pipes(proc);
 
     // Record the exit so the parent's wait() can collect it, and wake the
     // parent if it's already blocked in wait. Skip kernel-task children
@@ -403,9 +465,10 @@ void process_destroy(process_t* proc)
     if (!proc || proc == &kernel_task)
         return;
 
-    // Release any writable fds still open (e.g. a killed process that
-    // never reached process_exit). Flushes on the last reference.
+    // Release any fds still open (e.g. a killed process that never reached
+    // process_exit). fd_close_* are safe to call twice (idempotent).
     fd_close_writable(proc);
+    fd_close_pipes(proc);
 
     if (proc->page_directory)
         paging_destroy_address_space(proc->page_directory);

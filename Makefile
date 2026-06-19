@@ -45,7 +45,8 @@ OBJS = \
 	kernel/scheduler.o \
 	kernel/scheduler_asm.o \
 	kernel/elf.o \
-	kernel/wbuf.o
+	kernel/wbuf.o \
+	kernel/pipe.o
 
 # +------------------+
 # + Primary Targets  +
@@ -72,6 +73,7 @@ disk: user
 	mcopy -i disk.img user/fdcat.elf ::FDCAT.ELF
 	mcopy -i disk.img user/redir.elf ::REDIR.ELF
 	mcopy -i disk.img user/ush.elf ::USH.ELF
+	mcopy -i disk.img user/cat2.elf ::CAT2.ELF
 
 run: GordOS.iso
 	@test -f disk.img || (echo "ERROR: disk.img not found, run 'make disk' first" && exit 1)
@@ -189,7 +191,7 @@ kernel/shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h \
 	$(CC) $(CFLAGS) -c kernel/shell.c -o kernel/shell.o
 
 kernel/syscall.o: kernel/syscall.c kernel/syscall.h cpu/idt.h kernel/process.h \
-                  drivers/keyboard.h drivers/pit.h fs/fat32.h
+                  kernel/pipe.h drivers/keyboard.h drivers/pit.h fs/fat32.h
 	$(CC) $(CFLAGS) -c kernel/syscall.c -o kernel/syscall.o
 
 kernel/usermode.o: kernel/usermode.c kernel/usermode.h cpu/gdt.h
@@ -198,7 +200,7 @@ kernel/usermode.o: kernel/usermode.c kernel/usermode.h cpu/gdt.h
 kernel/usermode_asm.o: kernel/usermode.s
 	$(AS) kernel/usermode.s -o kernel/usermode_asm.o
 
-kernel/process.o: kernel/process.c kernel/process.h memory/paging.h memory/kmalloc.h cpu/gdt.h
+kernel/process.o: kernel/process.c kernel/process.h kernel/pipe.h memory/paging.h memory/kmalloc.h cpu/gdt.h
 	$(CC) $(CFLAGS) -c kernel/process.c -o kernel/process.o
 
 kernel/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/process.h memory/paging.h cpu/gdt.h
@@ -213,12 +215,15 @@ kernel/elf.o: kernel/elf.c kernel/elf.h kernel/process.h memory/paging.h memory/
 kernel/wbuf.o: kernel/wbuf.c kernel/wbuf.h fs/fat32.h memory/kmalloc.h lib/string.h
 	$(CC) $(CFLAGS) -c kernel/wbuf.c -o kernel/wbuf.o
 
+kernel/pipe.o: kernel/pipe.c kernel/pipe.h memory/kmalloc.h
+	$(CC) $(CFLAGS) -c kernel/pipe.c -o kernel/pipe.o
+
 # +------------------+
 # + User Programs    +
 # +------------------+
 
 user: user/hello.elf user/echo.elf user/files.elf user/crash.elf user/counter.elf \
-      user/forktest.elf user/fdcat.elf user/redir.elf user/ush.elf
+      user/forktest.elf user/fdcat.elf user/redir.elf user/ush.elf user/cat2.elf
 
 user/hello.elf: user/hello.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
@@ -255,3 +260,7 @@ user/redir.elf: user/redir.c user/linker.ld
 user/ush.elf: user/ush.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
 	      -T user/linker.ld user/ush.c -o user/ush.elf
+
+user/cat2.elf: user/cat2.c user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
+	      -T user/linker.ld user/cat2.c -o user/cat2.elf

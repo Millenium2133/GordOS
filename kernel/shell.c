@@ -357,8 +357,9 @@ static void cmd_time(void)
 // foreground=1 (exec): the process owns the keyboard and the shell
 // waits for it to exit before showing the next prompt.
 // foreground=0 (bg): the process runs alongside the shell.
-// Returns the new process on success (still valid until this IRQ
-// returns), or 0 on failure. (USER_STACK_* come from process.h.)
+// args is the full argument string "PROG [arg1 arg2 ...]"; the first
+// space-delimited token is the filename.
+// Returns the new process on success, or 0 on failure.
 static process_t* start_program(const char* args, int foreground, const char* who)
 {
 	if (!args || *args == '\0')
@@ -366,9 +367,19 @@ static process_t* start_program(const char* args, int foreground, const char* wh
 		terminal_writestring(who);
 		terminal_writestring(": usage: ");
 		terminal_writestring(who);
-		terminal_writestring(" FILENAME\n");
+		terminal_writestring(" FILENAME [args...]\n");
 		return 0;
 	}
+
+	// Extract the filename (first word of args)
+	char filename[256];
+	int fi = 0;
+	while (args[fi] && args[fi] != ' ' && fi < 255)
+	{
+		filename[fi] = args[fi];
+		fi++;
+	}
+	filename[fi] = '\0';
 
 	// Read the ELF image into memory (max 64KB for now)
 	void* buf = kmalloc(65536);
@@ -380,7 +391,7 @@ static process_t* start_program(const char* args, int foreground, const char* wh
 	}
 
 	uint32_t size = 0;
-	if (fat32_read_file(args, buf, 65536, &size) != 0)
+	if (fat32_read_file(filename, buf, 65536, &size) != 0)
 	{
 		terminal_writestring(who);
 		terminal_writestring(": file not found\n");
@@ -408,7 +419,8 @@ static process_t* start_program(const char* args, int foreground, const char* wh
 		return 0;
 	}
 
-	// Map one page of user stack just below the kernel half
+	// Map one page of user stack just below the kernel half and
+	// populate it with the argc/argv frame for the new program.
 	void* stack_phys = pmm_alloc_page();
 	if (!stack_phys)
 	{
@@ -428,12 +440,17 @@ static process_t* start_program(const char* args, int foreground, const char* wh
 		return 0;
 	}
 
+	// Build argc/argv on the stack page via a temporary kernel mapping.
+	// args is the full command string "PROG arg1 arg2 ..." so argv[0]
+	// comes out as the program name.
+	uint32_t user_esp = paging_build_user_stack(stack_phys, USER_STACK_PAGE, args);
+
 	if (foreground)
 		keyboard_flush(); // don't leak pre-launch keystrokes to the program
 
 	// Add to the scheduler; it will be time-sliced in. process_destroy
 	// is the reaper's job now, not ours.
-	process_start(proc, entry, USER_STACK_TOP, foreground);
+	process_start(proc, entry, user_esp, foreground);
 	return proc;
 }
 

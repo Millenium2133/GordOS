@@ -34,4 +34,23 @@ void paging_init(void);
 void paging_map_page(uint32_t virt, uint32_t phys, uint32_t flags);
 void paging_unmap_page(uint32_t virt);
 
+// Build argc/argv on a freshly allocated stack page and return the initial
+// user-space esp. stack_phys is the physical page; user_page_base is the
+// virtual address it will be mapped at in user space. cmdline is a
+// space-delimited argument string — the first token becomes argv[0].
+// Works by temporarily mapping the physical page at a kernel scratch
+// address, writing the stack frame, then unmapping.
+//
+// Stack layout at the returned esp:
+//   [esp+0]  fake return address (0)     ← initial esp
+//   [esp+4]  argc
+//   [esp+8]  argv  (pointer to argv[0])
+//   [esp+12] 0     (envp, unused)
+//   [esp+16] argv[0] pointer
+//   ...      argv[1..argc-1] pointers
+//            NULL
+//            packed NUL-terminated argument strings
+uint32_t paging_build_user_stack(void* stack_phys, uint32_t user_page_base,
+                                  const char* cmdline);
+
 #endif

@@ -9,9 +9,11 @@
 #define PROCESS_DEAD    3
 
 // Why a PROCESS_BLOCKED process is sleeping
-#define BLOCK_NONE 0
-#define BLOCK_WAIT 1   // waiting for a child to exit (wait_target = pid, 0 = any)
-#define BLOCK_READ 2   // waiting for keyboard input
+#define BLOCK_NONE       0
+#define BLOCK_WAIT       1   // waiting for a child to exit
+#define BLOCK_READ       2   // waiting for keyboard input
+#define BLOCK_PIPE_READ  3   // blocked reading an empty pipe
+#define BLOCK_PIPE_WRITE 4   // blocked writing a full pipe
 
 // Per-process kernel stack. Interrupts and syscalls from ring 3 run on
 // this (via TSS esp0), including the whole shell from the keyboard IRQ,
@@ -30,18 +32,22 @@
 #define MAX_FDS 8
 
 // fd kinds
-#define FD_NONE    0   // unused slot
-#define FD_FILE    1   // a regular file (read or, if writable, write)
-#define FD_TTY_IN  2   // stdin  — keyboard
-#define FD_TTY_OUT 3   // stdout/stderr — terminal
+#define FD_NONE      0   // unused slot
+#define FD_FILE      1   // a regular file (read or, if writable, write)
+#define FD_TTY_IN    2   // stdin  — keyboard
+#define FD_TTY_OUT   3   // stdout/stderr — terminal
+#define FD_PIPE_READ 4   // read end of a pipe
+#define FD_PIPE_WRITE 5  // write end of a pipe
 
 struct wbuf;
+struct pipe;
 
 typedef struct
 {
     int      kind;           // FD_NONE if free
     int      writable;       // FD_FILE opened for writing (uses wbuf)
     struct wbuf* wbuf;       // write buffer when writable
+    struct pipe* pipe;       // pipe_t* for FD_PIPE_READ / FD_PIPE_WRITE
 
     // read state (FD_FILE, reading)
     uint32_t first_cluster;
@@ -100,11 +106,14 @@ process_t* process_fork(struct registers* regs);
 
 // Replace the calling process's program in place (exec), reusing the
 // same pid and page directory. Takes ownership of elf_data (frees it).
+// cmdline is a space-delimited argument string used to build argc/argv
+// on the new stack (first token = argv[0]). May be NULL for no args.
 // On success it enters the new program in ring 3 and never returns; on
 // recoverable failure (bad ELF) it returns -1 with the caller intact.
 // An out-of-memory failure after teardown is unrecoverable and kills
 // the process rather than returning.
-int process_exec(process_t* proc, void* elf_data, uint32_t elf_size);
+int process_exec(process_t* proc, void* elf_data, uint32_t elf_size,
+                 const char* cmdline);
 
 // Build the initial kernel stack so the scheduler can switch into this
 // process (it will enter ring 3 at entry with the given user stack),
