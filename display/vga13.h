@@ -15,4 +15,10 @@
 // text terminal re-initialised; the caller should redraw its prompt.
 void vga_splash_gordon(void);
 
+// Like vga_splash_gordon, but draws the mascot on the left and renders
+// sysinfo text on the right — a full VGA fasterfetch.  Same interrupt
+// and return-value contract as vga_splash_gordon.
+void vga_fasterfetch(const char* cpu, uint32_t used_mb, uint32_t total_mb,
+                     uint32_t uptime_secs);
+
 #endif

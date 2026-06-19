@@ -205,23 +205,56 @@ static void restore_palette(const unsigned char* buf)
 
 // --- The splash itself ----------------------------------------------------
 
-static void draw_bitmap(void)
+static void draw_bitmap_at(int x0, int y0, uint8_t color)
 {
-    int x0 = (320 - GORDON_W) / 2;
-    int y0 = (200 - GORDON_H) / 2;
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
 
-    for (int y = 0; y < GORDON_H; y++)
+    for (int y = 0; y < GORDON_H && (y0 + y) < 200; y++)
     {
         const unsigned char* rowp = gordon_bitmap + y * GORDON_STRIDE;
         volatile uint8_t* dst = VGA_MEM + (y0 + y) * 320 + x0;
-        for (int x = 0; x < GORDON_W; x++)
+        for (int x = 0; x < GORDON_W && (x0 + x) < 320; x++)
         {
             if (rowp[x >> 3] & (0x80 >> (x & 7)))
-                dst[x] = 1;   // mascot colour (palette index 1)
+                dst[x] = color;
         }
     }
+}
+
+// --- Text rendering in mode 13h using the saved text-mode font ------------
+
+static void draw_char_at(int x, int y, unsigned char ch, uint8_t color)
+{
+    for (int row = 0; row < TEXT_FONT_HEIGHT; row++)
+    {
+        if (y + row >= 200) break;
+        uint8_t glyph = saved_font[(int)ch * TEXT_FONT_HEIGHT + row];
+        for (int bit = 0; bit < 8; bit++)
+        {
+            if (x + bit >= 320) break;
+            if (glyph & (0x80 >> bit))
+                VGA_MEM[(y + row) * 320 + (x + bit)] = color;
+        }
+    }
+}
+
+static void draw_str_at(int* px, int y, const char* s, uint8_t color)
+{
+    while (*s && *px + 8 <= 320)
+    {
+        draw_char_at(*px, y, (unsigned char)*s++, color);
+        *px += 8;
+    }
+}
+
+static void draw_uint_at(int* px, int y, uint32_t n, uint8_t color)
+{
+    char buf[12];
+    int i = 11;
+    buf[i] = '\0';
+    do { buf[--i] = '0' + n % 10; n /= 10; } while (n);
+    draw_str_at(px, y, buf + i, color);
 }
 
 static void wait_for_key(void)
@@ -254,13 +287,141 @@ void vga_splash_gordon(void)
     outb(VGA_DAC_DATA, 0);  outb(VGA_DAC_DATA, 0);  outb(VGA_DAC_DATA, 0);
     outb(VGA_DAC_DATA, 63); outb(VGA_DAC_DATA, 40); outb(VGA_DAC_DATA, 10);
 
-    // Clear to black and draw.
+    // Clear to black and draw (centered).
     memset((void*)VGA_MEM, 0, 320 * 200);
-    draw_bitmap();
+    draw_bitmap_at((320 - GORDON_W) / 2, (200 - GORDON_H) / 2, 1);
 
     wait_for_key();
 
     // Back to text: registers, font, palette, then a clean terminal.
+    write_regs(g_text80x25);
+    write_font(saved_font, TEXT_FONT_HEIGHT);
+    restore_palette(saved_palette);
+
+    terminal_initialize();
+}
+
+void vga_fasterfetch(const char* cpu, uint32_t used_mb, uint32_t total_mb,
+                     uint32_t uptime_secs)
+{
+    // Standard EGA 16-colour DAC values (6-bit).
+    static const uint8_t ega[16][3] = {
+        { 0,  0,  0}, { 0,  0, 42}, { 0, 42,  0}, { 0, 42, 42},
+        {42,  0,  0}, {42,  0, 42}, {42, 21,  0}, {42, 42, 42},
+        {21, 21, 21}, {21, 21, 63}, {21, 63, 21}, {21, 63, 63},
+        {63, 21, 21}, {63, 21, 63}, {63, 63, 21}, {63, 63, 63},
+    };
+
+    save_palette(saved_palette);
+    read_font(saved_font, TEXT_FONT_HEIGHT);
+
+    write_regs(g_mode13h);
+
+    // Palette layout:
+    //   0  = black
+    //   1  = ginger (Gordon bitmap)
+    //   2  = white  (body text)
+    //   3  = light cyan (labels)
+    //   4  = light green (user@host)
+    //   5-20 = EGA 16 colours (colour swatches)
+    outb(VGA_DAC_WRITE_INDEX, 0);
+    outb(VGA_DAC_DATA,  0); outb(VGA_DAC_DATA,  0); outb(VGA_DAC_DATA,  0);
+    outb(VGA_DAC_DATA, 63); outb(VGA_DAC_DATA, 40); outb(VGA_DAC_DATA, 10);
+    outb(VGA_DAC_DATA, 63); outb(VGA_DAC_DATA, 63); outb(VGA_DAC_DATA, 63);
+    outb(VGA_DAC_DATA, 21); outb(VGA_DAC_DATA, 63); outb(VGA_DAC_DATA, 63);
+    outb(VGA_DAC_DATA, 21); outb(VGA_DAC_DATA, 63); outb(VGA_DAC_DATA, 21);
+    for (int i = 0; i < 16; i++)
+    {
+        outb(VGA_DAC_DATA, ega[i][0]);
+        outb(VGA_DAC_DATA, ega[i][1]);
+        outb(VGA_DAC_DATA, ega[i][2]);
+    }
+
+    memset((void*)VGA_MEM, 0, 320 * 200);
+
+    // Gordon left-aligned; text area to his right.
+    int gx = 5;
+    int gy = (200 - GORDON_H) / 2;
+    draw_bitmap_at(gx, gy, 1);
+
+    // Text area: starts just right of Gordon.
+    int tx = gx + GORDON_W + 14;   // x = 5+122+14 = 141, ~22 chars available
+
+    // Centre 8 info lines + gap + 2 swatch rows vertically.
+    int ty = (200 - 8 * TEXT_FONT_HEIGHT) / 2;
+    if (ty < 4) ty = 4;
+    int x;
+
+    // gordon@gordos
+    x = tx;
+    draw_str_at(&x, ty, "gordon", 4);
+    draw_str_at(&x, ty, "@", 2);
+    draw_str_at(&x, ty, "gordos", 4);
+    ty += TEXT_FONT_HEIGHT;
+
+    // separator matches width of "gordon@gordos" (13 chars)
+    x = tx;
+    draw_str_at(&x, ty, "-------------", 2);
+    ty += TEXT_FONT_HEIGHT;
+
+    x = tx;
+    draw_str_at(&x, ty, "OS:     ", 3);
+    draw_str_at(&x, ty, "GordOS (i686)", 2);
+    ty += TEXT_FONT_HEIGHT;
+
+    x = tx;
+    draw_str_at(&x, ty, "Kernel: ", 3);
+    draw_str_at(&x, ty, "monolithic", 2);
+    ty += TEXT_FONT_HEIGHT;
+
+    x = tx;
+    draw_str_at(&x, ty, "Uptime: ", 3);
+    draw_uint_at(&x, ty, uptime_secs / 60, 2);
+    draw_str_at(&x, ty, "m ", 2);
+    draw_uint_at(&x, ty, uptime_secs % 60, 2);
+    draw_str_at(&x, ty, "s", 2);
+    ty += TEXT_FONT_HEIGHT;
+
+    x = tx;
+    draw_str_at(&x, ty, "Shell:  ", 3);
+    draw_str_at(&x, ty, "gsh", 2);
+    ty += TEXT_FONT_HEIGHT;
+
+    // CPU: truncate to 14 chars (8 label + 14 data = 22 cols)
+    x = tx;
+    draw_str_at(&x, ty, "CPU:    ", 3);
+    char cpu_short[15];
+    int ci;
+    for (ci = 0; ci < 14 && cpu[ci]; ci++) cpu_short[ci] = cpu[ci];
+    cpu_short[ci] = '\0';
+    draw_str_at(&x, ty, cpu_short, 2);
+    ty += TEXT_FONT_HEIGHT;
+
+    x = tx;
+    draw_str_at(&x, ty, "Memory: ", 3);
+    draw_uint_at(&x, ty, used_mb, 2);
+    draw_str_at(&x, ty, " / ", 2);
+    draw_uint_at(&x, ty, total_mb, 2);
+    draw_str_at(&x, ty, " MB", 2);
+    ty += TEXT_FONT_HEIGHT;
+
+    // Colour swatches: 2 rows of 8 blocks (indices 5-20)
+    ty += 8;
+    for (int row = 0; row < 2; row++)
+    {
+        for (int col = 0; col < 8; col++)
+        {
+            uint8_t idx = (uint8_t)(5 + row * 8 + col);
+            int sx = tx + col * 14;
+            int sy = ty + row * 12;
+            for (int py = 0; py < 10 && sy + py < 200; py++)
+                for (int bx = 0; bx < 13 && sx + bx < 320; bx++)
+                    VGA_MEM[(sy + py) * 320 + sx + bx] = idx;
+        }
+    }
+
+    wait_for_key();
+
     write_regs(g_text80x25);
     write_font(saved_font, TEXT_FONT_HEIGHT);
     restore_palette(saved_palette);

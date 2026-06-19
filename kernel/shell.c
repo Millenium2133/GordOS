@@ -681,38 +681,6 @@ static void cpu_get_name(char* name)
 	name[12] = '\0';
 }
 
-// Left column logo, printed in cyan beside the info lines
-static const char* ff_logo[] = {
-	"   ________   ",
-	"  / GordOS \\  ",
-	" |  .----.  | ",
-	" |  | >_ |  | ",
-	" |  '----'  | ",
-	"  \\________/  ",
-	"    |    |    ",
-	"   /______\\   ",
-};
-#define FF_LOGO_LINES (int)(sizeof(ff_logo) / sizeof(ff_logo[0]))
-#define FF_LOGO_WIDTH 14
-
-static void ff_logo_line(int row)
-{
-	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
-	if (row < FF_LOGO_LINES)
-		terminal_writestring(ff_logo[row]);
-	else
-		for (int i = 0; i < FF_LOGO_WIDTH; i++)
-			terminal_putchar(' ');
-	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
-}
-
-static void ff_label(const char* label)
-{
-	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK));
-	terminal_writestring(label);
-	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
-}
-
 static void cmd_fasterfetch(void)
 {
 	char cpu_name[49];
@@ -722,82 +690,12 @@ static void cmd_fasterfetch(void)
 	uint32_t total_pg = pmm_total_pages();
 	uint32_t used_mb  = ((total_pg - free_pg) * 4) / 1024;
 	uint32_t total_mb = (total_pg * 4) / 1024;
-	uint32_t seconds  = timer_ticks() / 1000;
+	uint32_t uptime_s = timer_ticks() / 1000;
 
-	int row = 0;
-
-	// Row 0: user@host
-	ff_logo_line(row++);
-	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-	terminal_writestring("gordon");
-	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
-	terminal_writestring("@");
-	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
-	terminal_writestring("gordos");
-	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
-	terminal_putchar('\n');
-
-	// Row 1: separator
-	ff_logo_line(row++);
-	terminal_writestring("-------------\n");
-
-	// Row 2: OS
-	ff_logo_line(row++);
-	ff_label("OS:      ");
-	terminal_writestring("GordOS (i686)\n");
-
-	// Row 3: Kernel
-	ff_logo_line(row++);
-	ff_label("Kernel:  ");
-	terminal_writestring("monolithic, higher-half\n");
-
-	// Row 4: Uptime
-	ff_logo_line(row++);
-	ff_label("Uptime:  ");
-	print_uint(seconds / 60);
-	terminal_writestring("m ");
-	print_uint(seconds % 60);
-	terminal_writestring("s\n");
-
-	// Row 5: Shell + Display
-	ff_logo_line(row++);
-	ff_label("Shell:   ");
-	terminal_writestring("gsh\n");
-
-	// Row 6: CPU
-	ff_logo_line(row++);
-	ff_label("CPU:     ");
-	terminal_writestring(cpu_name);
-	terminal_putchar('\n');
-
-	// Row 7: Memory
-	ff_logo_line(row++);
-	ff_label("Memory:  ");
-	print_uint(used_mb);
-	terminal_writestring(" / ");
-	print_uint(total_mb);
-	terminal_writestring(" MB\n");
-
-	// Trailing rows: colour palette blocks
-	for (int i = 0; i < FF_LOGO_WIDTH; i++)
-		terminal_putchar(' ');
-	for (int bg = 0; bg < 8; bg++)
-	{
-		terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, (enum vga_color)bg));
-		terminal_writestring("  ");
-	}
-	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
-	terminal_putchar('\n');
-
-	for (int i = 0; i < FF_LOGO_WIDTH; i++)
-		terminal_putchar(' ');
-	for (int bg = 8; bg < 16; bg++)
-	{
-		terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, (enum vga_color)bg));
-		terminal_writestring("  ");
-	}
-	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
-	terminal_putchar('\n');
+	uint32_t flags;
+	asm volatile("pushf\n\tpop %0\n\tcli" : "=r"(flags) :: "memory");
+	vga_fasterfetch(cpu_name, used_mb, total_mb, uptime_s);
+	asm volatile("push %0\n\tpopf" :: "r"(flags) : "memory", "cc");
 }
 
 // gordon — fullscreen VGA graphics splash of the mascot. Switches to
