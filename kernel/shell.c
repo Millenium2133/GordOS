@@ -12,6 +12,7 @@
 #include "paging.h"
 #include "keyboard.h"
 #include "pic.h"
+#include "vga13.h"
 
 #define INPUT_BUFFER_SIZE 256
 
@@ -83,6 +84,7 @@ static void cmd_help(void)
 	terminal_writestring("	uptime	- Show time since boot\n");
 	terminal_writestring("	free	- Show free memory\n");
 	terminal_writestring("	fasterfetch - Show system info\n");
+	terminal_writestring("	gordon	- Show the mascot (press any key to exit)\n");
 	terminal_writestring("	reboot	- Restart the machine\n");
 	terminal_writestring("	about	- About GordOS\n");
 	terminal_writestring("\n");
@@ -798,6 +800,20 @@ static void cmd_fasterfetch(void)
 	terminal_putchar('\n');
 }
 
+// gordon — fullscreen VGA graphics splash of the mascot. Switches to
+// mode 13h, draws the bitmap, waits for a keypress, then restores the
+// text shell. Runs with interrupts disabled (the splash polls the
+// keyboard directly); we save and restore the caller's interrupt flag.
+static void cmd_gordon(void)
+{
+	uint32_t flags;
+	asm volatile("pushf\n\tpop %0\n\tcli" : "=r"(flags) :: "memory");
+
+	vga_splash_gordon();
+
+	asm volatile("push %0\n\tpopf" :: "r"(flags) : "memory", "cc");
+}
+
 
 // ++++++++++++++++++++
 // + Command Dispatch +
@@ -887,6 +903,9 @@ static void shell_execute(const char* input)
 
 	else if (is_command(input, "fasterfetch"))
 		cmd_fasterfetch();
+
+	else if (is_command(input, "gordon"))
+		cmd_gordon();
 
 	else if (is_command(input, "reboot"))
 		cmd_reboot();

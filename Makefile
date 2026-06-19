@@ -26,6 +26,7 @@ OBJS = \
 	drivers/serial.o \
 	\
 	display/vga.o \
+	display/vga13.o \
 	display/splash.o \
 	\
 	lib/string.o \
@@ -144,6 +145,10 @@ drivers/serial.o: drivers/serial.c drivers/serial.h drivers/pic.h
 
 display/vga.o: display/vga.c display/vga.h lib/string.h drivers/pic.h drivers/serial.h
 	$(CC) $(CFLAGS) -c display/vga.c -o display/vga.o
+
+display/vga13.o: display/vga13.c display/vga13.h display/vga.h display/gordon_art.h \
+                drivers/pic.h lib/string.h
+	$(CC) $(CFLAGS) -c display/vga13.c -o display/vga13.o
 
 display/splash.o: display/splash.c display/splash.h display/vga.h
 	$(CC) $(CFLAGS) -c display/splash.c -o display/splash.o
