@@ -200,9 +200,9 @@ static void cmd_write(const char* args)
 	// Split filename and content
 	const char* content = args;
 	int fi = 0;
-	char filename[13];
+	char filename[256];
 
-	while (*content && *content != ' ' && fi < 12)
+	while (*content && *content != ' ' && fi < 255)
 		filename[fi++] = *content++;
 	filename[fi] = '\0';
 
@@ -250,9 +250,9 @@ static void cmd_rename(const char* args)
 	// split into two filenames
 	const char * second = args;
 	int fi = 0;
-	char oldname[13];
+	char oldname[256];
 
-	while (*second && *second != ' ' && fi < 12)
+	while (*second && *second != ' ' && fi < 255)
 		oldname[fi++] = *second++;
 	oldname[fi] = '\0';
 
@@ -1027,7 +1027,7 @@ void shell_handle_char(char c)
 			if (input_buffer[i] == ' ') { has_space = 1; break; }
 		}
 
-		char matches[16][64];
+		char matches[16][256];
 		int count = 0;
 
 		if (!has_space)

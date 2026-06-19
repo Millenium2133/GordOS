@@ -43,7 +43,8 @@ done
 # Type commands into the guest via QEMU monitor sendkey
 python3 - "$MON_SOCK" "fasterfetch" "exec HELLO.ELF" "exec CRASH.ELF" \
         "exec FORKTEST.ELF" "exec FDCAT.ELF" "exec REDIR.ELF" \
-        "exec USH.ELF" "HELLO.ELF" "exit" "bg COUNTER.ELF" "ps" << 'EOF'
+        "exec USH.ELF" "HELLO.ELF" "exit" "bg COUNTER.ELF" "ps" \
+        "touch helloworld.txt" "ls" << 'EOF'
 import socket, sys, time
 
 KEYMAP = {' ': 'spc', '.': 'dot', '/': 'slash', '-': 'minus'}
@@ -83,7 +84,8 @@ for expect in 'FAT32 MOUNTED' 'GordOS (i686)' 'Hello from ring 3!' 'User process
               'forktest: reaped child pid' 'forktest: child exit code 0' \
               'FDSTART' 'FDEND' 'fdcat: read 1034 bytes' \
               'captured line one' 'redir: ok' \
-              'ush - user-space shell' 'ush: bye'; do
+              'ush - user-space shell' 'ush: bye' \
+              'helloworld.txt'; do
     if grep -qF "$expect" "$SERIAL_LOG"; then
         echo "PASS: $expect"
     else

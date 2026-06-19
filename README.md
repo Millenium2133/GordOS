@@ -6,6 +6,20 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 
 ---
 
+## Milestone Reached: FAT32 Long Filename (LFN) Support
+
+GordOS now reads and writes files with names longer than the classic 8.3 format.
+
+- **LFN read**: `ls`, `cat`, `exec`, `cd` and every other command that touches the filesystem now assembles FAT32 LFN entry chains (UTF-16LE → ASCII) and uses the full long name for display and case-insensitive matching.
+- **LFN write**: `touch`, `write`, and `mkdir` generate proper LFN entry sequences before the 8.3 SFN when the name doesn't fit in 8.3. The 8.3 alias is generated automatically (`LONGFI~1.EXT` style) for compatibility with legacy tools.
+- **LFN delete / rename**: both operations mark all associated LFN entries as deleted (0xE5) before removing or recreating the SFN entry.
+- **Tab completion**: filename completion now matches and returns long names.
+- Files created by host tools (`mcopy`, Windows, Linux) with long names are fully readable.
+
+This is a prerequisite step towards hosting a C compiler on GordOS.
+
+---
+
 ## Milestone Reached: A User-Space Shell with I/O Redirection
 
 GordOS now has standard streams and a shell that runs entirely in ring 3.
@@ -59,6 +73,7 @@ Earlier milestone (still true): ELF executables are loaded from the FAT32 disk �
 - Kernel heap allocator (kmalloc/kfree) with splitting and coalescing
 - ATA PIO disk driver
 - FAT32 filesystem: mount, list, read, create, write, delete, rename files and directories
+- FAT32 Long Filename (LFN) support: filenames up to 255 characters, full UTF-16LE → ASCII assembly, LFN-aware tab completion
 - Subdirectory navigation with absolute and relative path support
 - Page fault handler that prints the faulting address and error code
 - PIT driver at 1000Hz (timer_ticks, timer_sleep)
@@ -100,7 +115,7 @@ Active development.
 
 **Medium term**
 - VFS layer abstracting FAT32 behind a unified file interface
-- FAT32 long filename (LFN) support
+- Groundwork for hosting a C compiler (tcc or similar)
 
 **Long term**
 - More shell built-ins as the OS grows
@@ -279,6 +294,6 @@ You can also create and write files from within GordOS using the built-in shell 
 
 ## Known Issues
 
-- Filenames must be 8.3 uppercase format (e.g. `TEST.TXT`), input can be lowercase
 - Shell currently runs in ring 0, will be moved to user mode when process support is complete
 - Kernel heap is limited to the identity-mapped low 4MB of physical memory
+- SFN collision resolution uses `~1` suffix only; multiple files with the same first-6-char base will alias (rare in practice)
