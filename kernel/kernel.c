@@ -69,10 +69,14 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	terminal_writestring("Scheduler ready\n");
 
 	splash_show();
-	shell_init();
 
 	keyboard_init();
 	pit_init(1000);
+
+	// Try to launch the ring-3 shell (ush.elf).  If it's missing, fall
+	// back to the built-in ring-0 kernel shell.
+	if (shell_launch_ush() != 0)
+		shell_init();
 
 	asm volatile("sti");
 

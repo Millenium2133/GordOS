@@ -109,7 +109,12 @@ void terminal_putchar(char c)
 	// Mirror all terminal output to the serial debug console
 	serial_putchar(c);
 
-	if (c == '\n')
+	if (c == '\b')
+	{
+		terminal_cursor_left();
+		return;
+	}
+	else if (c == '\n')
 	{
 		terminal_column = 0;
 		if (++terminal_row == VGA_HEIGHT)

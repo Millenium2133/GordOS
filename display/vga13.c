@@ -151,7 +151,7 @@ static void read_font(unsigned char* buf, unsigned font_height)
     outb(VGA_GC_INDEX, 5); gc5 = inb(VGA_GC_DATA);
     outb(VGA_GC_INDEX, 5); outb(VGA_GC_DATA, gc5 & ~0x10);
     outb(VGA_GC_INDEX, 6); gc6 = inb(VGA_GC_DATA);
-    outb(VGA_GC_INDEX, 6); outb(VGA_GC_DATA, gc6 & ~0x02);
+    outb(VGA_GC_INDEX, 6); outb(VGA_GC_DATA, gc6 & ~0x0E); // clear Memory Map Select + Chain O/E to reach 0xA0000
 
     set_plane(2);
     for (i = 0; i < 256; i++)
@@ -176,7 +176,7 @@ static void write_font(const unsigned char* buf, unsigned font_height)
     outb(VGA_GC_INDEX, 5); gc5 = inb(VGA_GC_DATA);
     outb(VGA_GC_INDEX, 5); outb(VGA_GC_DATA, gc5 & ~0x10);
     outb(VGA_GC_INDEX, 6); gc6 = inb(VGA_GC_DATA);
-    outb(VGA_GC_INDEX, 6); outb(VGA_GC_DATA, gc6 & ~0x02);
+    outb(VGA_GC_INDEX, 6); outb(VGA_GC_DATA, gc6 & ~0x0E); // clear Memory Map Select + Chain O/E to reach 0xA0000
 
     set_plane(2);
     for (i = 0; i < 256; i++)

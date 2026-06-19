@@ -22,6 +22,23 @@
 #define SYS_DUP2            15
 #define SYS_GIVE_FOREGROUND 16
 #define SYS_PIPE            17
+#define SYS_CHDIR           18
+#define SYS_GETCWD          19
+#define SYS_MKDIR           20
+#define SYS_RMFILE          21
+#define SYS_RENAME          22
+#define SYS_LISTDIR         23
+#define SYS_UPTIME          24
+#define SYS_MEMINFO         25
+#define SYS_KILL_PID        26
+#define SYS_PS              27
+#define SYS_SETCOLOR        28
+#define SYS_FASTERFETCH     29
+#define SYS_PETER           30
+#define SYS_FINDPREFIX      31
+#define SYS_READRAW         32
+#define SYS_GETTIME         33
+#define SYS_CLEAR           34
 
 void syscall_init(void);
 void syscall_handler(struct registers* regs);

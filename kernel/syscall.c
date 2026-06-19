@@ -1,10 +1,13 @@
 #include "syscall.h"
 #include "vga.h"
+#include "vga13.h"
 #include "process.h"
 #include "scheduler.h"
 #include "keyboard.h"
 #include "pit.h"
+#include "rtc.h"
 #include "fat32.h"
+#include "pmm.h"
 #include "kmalloc.h"
 #include "wbuf.h"
 #include "pipe.h"
@@ -612,6 +615,242 @@ static int sys_getpid(void)
     return current_process ? (int)current_process->pid : 0;
 }
 
+// ---- New syscalls for the ring-3 shell ----
+
+static void sc_print_uint(uint32_t n)
+{
+    char buf[11];
+    int i = 10;
+    buf[i] = '\0';
+    do { buf[--i] = '0' + (n % 10); n /= 10; } while (n);
+    terminal_writestring(&buf[i]);
+}
+
+static int sys_chdir(const char* upath)
+{
+    char path[256];
+    if (copy_user_path(upath, path, sizeof(path)) != 0) return -1;
+    return fat32_cd(path);
+}
+
+static int sys_getcwd(char* ubuf, uint32_t size)
+{
+    if (!user_range_ok(ubuf, size)) return -1;
+    const char* cwd = fat32_get_cwd_path();
+    uint32_t i;
+    for (i = 0; cwd[i] && i < size - 1; i++) ubuf[i] = cwd[i];
+    ubuf[i] = '\0';
+    return 0;
+}
+
+static int sys_mkdir_sc(const char* upath)
+{
+    char path[256];
+    if (copy_user_path(upath, path, sizeof(path)) != 0) return -1;
+    return fat32_mkdir(path);
+}
+
+static int sys_rmfile(const char* upath)
+{
+    char path[256];
+    if (copy_user_path(upath, path, sizeof(path)) != 0) return -1;
+    return fat32_delete_file(path);
+}
+
+static int sys_rename_sc(const char* uold, const char* unew)
+{
+    char oldp[256], newp[256];
+    if (copy_user_path(uold, oldp, sizeof(oldp)) != 0) return -1;
+    if (copy_user_path(unew, newp, sizeof(newp)) != 0) return -1;
+    return fat32_rename_file(oldp, newp);
+}
+
+static int sys_listdir(const char* upath)
+{
+    char path[256];
+    if (copy_user_path(upath, path, sizeof(path)) != 0) return -1;
+    return fat32_list_dir(path);
+}
+
+static int sys_uptime(void)
+{
+    return (int)(timer_ticks() / 1000);
+}
+
+static int sys_meminfo(uint32_t* ubuf)
+{
+    if (!user_range_ok(ubuf, 2 * sizeof(uint32_t))) return -1;
+    uint32_t free_pg  = pmm_free_pages();
+    uint32_t total_pg = pmm_total_pages();
+    ubuf[0] = ((total_pg - free_pg) * 4) / 1024;
+    ubuf[1] = (total_pg * 4) / 1024;
+    return 0;
+}
+
+static int sys_kill_pid(uint32_t pid)
+{
+    if (pid == 0) return -1;
+    process_t* proc = scheduler_find(pid);
+    if (!proc) return -1;
+    if (foreground_process == proc)
+        foreground_process = 0;
+    if (proc == current_process)
+    {
+        proc->state = PROCESS_DEAD;
+    }
+    else
+    {
+        proc->state = PROCESS_DEAD;
+        scheduler_remove(proc);
+        process_zombie_add(proc);
+    }
+    return 0;
+}
+
+static void sys_ps_print_one(process_t* p)
+{
+    sc_print_uint(p->pid);
+    if (p->pid == 0)
+        terminal_writestring("\t-\tkernel\n");
+    else
+    {
+        terminal_writestring("\t");
+        terminal_writestring(p->foreground ? "fg" : "bg");
+        terminal_writestring("\t");
+        switch (p->state)
+        {
+            case PROCESS_READY:   terminal_writestring("ready");   break;
+            case PROCESS_RUNNING: terminal_writestring("running"); break;
+            case PROCESS_BLOCKED: terminal_writestring("blocked"); break;
+            case PROCESS_DEAD:    terminal_writestring("dead");    break;
+            default:              terminal_writestring("?");       break;
+        }
+        terminal_putchar('\n');
+    }
+}
+
+static int sys_ps(void)
+{
+    terminal_writestring("PID\tTYPE\tSTATE\n");
+    scheduler_for_each(sys_ps_print_one);
+    return 0;
+}
+
+static int sys_setcolor(uint8_t color)
+{
+    terminal_setcolor(color);
+    return 0;
+}
+
+static int sys_clear(void)
+{
+    extern void terminal_initialize(void);
+    terminal_initialize();
+    return 0;
+}
+
+static void sc_cpuid(uint32_t leaf, uint32_t* a, uint32_t* b, uint32_t* c, uint32_t* d)
+{
+    asm volatile("cpuid" : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d) : "a"(leaf), "c"(0));
+}
+
+static void sc_cpu_name(char* name)
+{
+    uint32_t a, b, c, d;
+    sc_cpuid(0x80000000, &a, &b, &c, &d);
+    if (a >= 0x80000004)
+    {
+        uint32_t* w = (uint32_t*)name;
+        int wi = 0;
+        for (uint32_t leaf = 0x80000002; leaf <= 0x80000004; leaf++)
+        {
+            sc_cpuid(leaf, &a, &b, &c, &d);
+            w[wi++] = a; w[wi++] = b; w[wi++] = c; w[wi++] = d;
+        }
+        name[48] = '\0';
+        int start = 0;
+        while (name[start] == ' ') start++;
+        if (start > 0) {
+            int k = 0;
+            while (name[start + k]) { name[k] = name[start + k]; k++; }
+            name[k] = '\0';
+        }
+        return;
+    }
+    sc_cpuid(0, &a, &b, &c, &d);
+    uint32_t* w = (uint32_t*)name;
+    w[0] = b; w[1] = d; w[2] = c;
+    name[12] = '\0';
+}
+
+static int sys_fasterfetch(void)
+{
+    char cpu_name[49];
+    sc_cpu_name(cpu_name);
+    uint32_t free_pg  = pmm_free_pages();
+    uint32_t total_pg = pmm_total_pages();
+    uint32_t used_mb  = ((total_pg - free_pg) * 4) / 1024;
+    uint32_t total_mb = (total_pg * 4) / 1024;
+    uint32_t uptime_s = timer_ticks() / 1000;
+    vga_fasterfetch(cpu_name, used_mb, total_mb, uptime_s);
+    return 0;
+}
+
+static int sys_peter(void)
+{
+    vga_splash_gordon();
+    return 0;
+}
+
+static int sys_findprefix(const char* uprefix, char* ubuf, uint32_t bufsz)
+{
+    char prefix[256];
+    if (copy_user_path(uprefix, prefix, sizeof(prefix)) != 0) return -1;
+    if (!user_range_ok(ubuf, bufsz)) return -1;
+
+    char matches[16][256];
+    int count = fat32_find_prefix(prefix, matches, 16);
+
+    uint32_t pos = 0;
+    for (int i = 0; i < count && pos + 2 < bufsz; i++)
+    {
+        int j = 0;
+        while (matches[i][j] && pos + 1 < bufsz)
+            ubuf[pos++] = matches[i][j++];
+        ubuf[pos++] = '\0';
+    }
+    if (pos < bufsz) ubuf[pos] = '\0';
+    return count;
+}
+
+static int sys_readraw(char* buf, uint32_t len)
+{
+    if (!user_range_ok(buf, len)) return -1;
+    if (len == 0) return 0;
+
+    uint32_t got = 0;
+    for (;;)
+    {
+        int c;
+        while (got < len && (c = keyboard_read_char()) >= 0)
+            buf[got++] = (char)c;
+        if (got > 0) break;
+        scheduler_block(BLOCK_READ, 0);
+        scheduler_switch();
+    }
+    return (int)got;
+}
+
+static int sys_gettime(uint32_t* ubuf)
+{
+    if (!user_range_ok(ubuf, 2 * sizeof(uint32_t))) return -1;
+    rtc_time_t t;
+    rtc_read_time(&t);
+    ubuf[0] = ((uint32_t)t.hours << 16) | ((uint32_t)t.minutes << 8) | t.seconds;
+    ubuf[1] = ((uint32_t)t.year  << 16) | ((uint32_t)t.month   << 8) | t.day;
+    return 0;
+}
+
 void syscall_handler(struct registers* regs)
 {
     int ret = 0;
@@ -679,6 +918,57 @@ void syscall_handler(struct registers* regs)
             break;
         case SYS_PIPE:
             ret = sys_pipe((int*)regs->ebx);
+            break;
+        case SYS_CHDIR:
+            ret = sys_chdir((const char*)regs->ebx);
+            break;
+        case SYS_GETCWD:
+            ret = sys_getcwd((char*)regs->ebx, regs->ecx);
+            break;
+        case SYS_MKDIR:
+            ret = sys_mkdir_sc((const char*)regs->ebx);
+            break;
+        case SYS_RMFILE:
+            ret = sys_rmfile((const char*)regs->ebx);
+            break;
+        case SYS_RENAME:
+            ret = sys_rename_sc((const char*)regs->ebx, (const char*)regs->ecx);
+            break;
+        case SYS_LISTDIR:
+            ret = sys_listdir((const char*)regs->ebx);
+            break;
+        case SYS_UPTIME:
+            ret = sys_uptime();
+            break;
+        case SYS_MEMINFO:
+            ret = sys_meminfo((uint32_t*)regs->ebx);
+            break;
+        case SYS_KILL_PID:
+            ret = sys_kill_pid(regs->ebx);
+            break;
+        case SYS_PS:
+            ret = sys_ps();
+            break;
+        case SYS_SETCOLOR:
+            ret = sys_setcolor((uint8_t)regs->ebx);
+            break;
+        case SYS_FASTERFETCH:
+            ret = sys_fasterfetch();
+            break;
+        case SYS_PETER:
+            ret = sys_peter();
+            break;
+        case SYS_FINDPREFIX:
+            ret = sys_findprefix((const char*)regs->ebx, (char*)regs->ecx, regs->edx);
+            break;
+        case SYS_READRAW:
+            ret = sys_readraw((char*)regs->ebx, regs->ecx);
+            break;
+        case SYS_GETTIME:
+            ret = sys_gettime((uint32_t*)regs->ebx);
+            break;
+        case SYS_CLEAR:
+            ret = sys_clear();
             break;
         default:
             // Unknown syscall

@@ -196,7 +196,8 @@ kernel/shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h \
 	$(CC) $(CFLAGS) -c kernel/shell.c -o kernel/shell.o
 
 kernel/syscall.o: kernel/syscall.c kernel/syscall.h cpu/idt.h kernel/process.h \
-                  kernel/pipe.h drivers/keyboard.h drivers/pit.h fs/fat32.h
+                  kernel/pipe.h drivers/keyboard.h drivers/pit.h drivers/rtc.h \
+                  fs/fat32.h memory/pmm.h display/vga13.h kernel/scheduler.h
 	$(CC) $(CFLAGS) -c kernel/syscall.c -o kernel/syscall.o
 
 kernel/usermode.o: kernel/usermode.c kernel/usermode.h cpu/gdt.h

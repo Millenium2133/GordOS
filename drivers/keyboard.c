@@ -35,10 +35,6 @@ static void deliver_char(char c)
 {
     if (foreground_process)
     {
-        // Shell editing keys mean nothing to a user program
-        if ((unsigned char)c >= 0x80)
-            return;
-
         int next = (kbd_head + 1) % KBD_BUFFER_SIZE;
         if (next != kbd_tail)
         {

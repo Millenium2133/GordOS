@@ -211,13 +211,15 @@ static int name_match(const char* a, const char* b)
     return 1;
 }
 
-// Return 1 if name fits cleanly in 8.3 (no LFN entries needed)
+// Return 1 if name fits cleanly in 8.3 (no LFN entries needed).
+// Lowercase letters are not valid in SFN and must force LFN.
 static int is_valid_83(const char* name)
 {
     int base = 0, dot = 0, ext = 0;
     for (int i = 0; name[i]; i++)
     {
         char c = name[i];
+        if (c >= 'a' && c <= 'z') return 0;
         if (c == '.')
         {
             if (dot) return 0;
@@ -1414,7 +1416,7 @@ int fat32_cd(const char* name)
                     cwd_path[pi++] = '/';
                     int ni = 1;
                     while (name[ni] && pi < 255)
-                        cwd_path[pi++] = to_upper(name[ni++]);
+                        cwd_path[pi++] = name[ni++];
                     cwd_path[pi] = '\0';
                 }
                 else
@@ -1424,7 +1426,7 @@ int fat32_cd(const char* name)
                     if (len > 1) cwd_path[len++] = '/';
                     int ni = 0;
                     while (name[ni] && len < 255)
-                        cwd_path[len++] = to_upper(name[ni++]);
+                        cwd_path[len++] = name[ni++];
                     cwd_path[len] = '\0';
                 }
 

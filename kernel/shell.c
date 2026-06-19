@@ -84,7 +84,7 @@ static void cmd_help(void)
 	terminal_writestring("	uptime	- Show time since boot\n");
 	terminal_writestring("	free	- Show free memory\n");
 	terminal_writestring("	fasterfetch - Show system info\n");
-	terminal_writestring("	gordon	- Show the mascot (press any key to exit)\n");
+	terminal_writestring("	peter	- Show the mascot (press any key to exit)\n");
 	terminal_writestring("	reboot	- Restart the machine\n");
 	terminal_writestring("	about	- About GordOS\n");
 	terminal_writestring("\n");
@@ -802,7 +802,7 @@ static void shell_execute(const char* input)
 	else if (is_command(input, "fasterfetch"))
 		cmd_fasterfetch();
 
-	else if (is_command(input, "gordon"))
+	else if (is_command(input, "peter"))
 		cmd_gordon();
 
 	else if (is_command(input, "reboot"))
@@ -1141,4 +1141,49 @@ void shell_init(void)
 	cursor_pos = 0;
 	history_index = -1;
 	shell_prompt();
+}
+
+// Try to launch USH.ELF from disk as the foreground ring-3 shell.
+// Returns 0 on success, -1 if the file is missing or loading fails.
+// On success the kernel shell stays silent until ush exits.
+int shell_launch_ush(void)
+{
+	void* buf = kmalloc(65536);
+	if (!buf) return -1;
+
+	uint32_t size = 0;
+	if (fat32_read_file("USH.ELF", buf, 65536, &size) != 0)
+	{
+		kfree(buf);
+		return -1;
+	}
+
+	process_t* proc = process_create();
+	if (!proc) { kfree(buf); return -1; }
+
+	uint32_t entry = elf_load(proc, buf, size);
+	kfree(buf);
+
+	if (entry == 0)
+	{
+		process_destroy(proc);
+		return -1;
+	}
+
+	void* stack_phys = pmm_alloc_page();
+	if (!stack_phys) { process_destroy(proc); return -1; }
+
+	if (paging_map_page_in(proc->page_directory, USER_STACK_PAGE,
+	                       (uint32_t)stack_phys,
+	                       PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER) != 0)
+	{
+		pmm_free_page(stack_phys);
+		process_destroy(proc);
+		return -1;
+	}
+
+	uint32_t user_esp = paging_build_user_stack(stack_phys, USER_STACK_PAGE, "USH.ELF");
+	keyboard_flush();
+	process_start(proc, entry, user_esp, 1);
+	return 0;
 }

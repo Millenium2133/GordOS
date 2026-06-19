@@ -13,6 +13,7 @@
 
 void shell_init(void);
 void shell_handle_char(char c);
+int  shell_launch_ush(void);
 
 // Called by the process reaper when a process has exited, so the shell
 // can restore its prompt (foreground) or announce completion (bg).
