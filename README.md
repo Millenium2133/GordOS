@@ -12,6 +12,7 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 - Higher-half kernel running at virtual `0xC0000000`
 - VGA text mode terminal with colour, scrolling, and a hardware cursor
 - PS/2 keyboard driver with full scancode translation, shift, and arrow keys
+- **Ring-3 user-space shell** (`ush`) launched automatically at boot — the kernel-shell fallback only activates if `USH.ELF` is missing
 - Interactive shell with command history, mid-line cursor movement, and tab autocomplete
 - Tab autocomplete for both commands and filenames/directories (including subdirectories)
 - Shell keyboard shortcuts: Ctrl+L clears the screen (keeping the typed line), Ctrl+C cancels the current line
@@ -20,6 +21,7 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 - ATA PIO disk driver
 - FAT32 filesystem: mount, list, read, create, write, delete, rename files and directories
 - FAT32 Long Filename (LFN) support: filenames up to 255 characters, full UTF-16LE → ASCII, LFN-aware tab completion
+- **Lowercase filenames** — names with lowercase letters correctly generate LFN entries instead of being silently uppercased
 - Subdirectory navigation with absolute and relative path support
 - Page fault handler that prints the faulting address and error code
 - PIT driver at 1000Hz (timer_ticks, timer_sleep)
@@ -38,14 +40,14 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 - Blocking `read()`: a process waiting on the keyboard sleeps off the run queue and is woken on input
 - Standard streams (stdin/stdout/stderr as fds 0/1/2) with `write`/`read` routed through them
 - Writable file descriptors and `dup2`, enabling `cmd > file` style output redirection
-- A user-space shell (`user/ush.c`) that forks/execs programs, passes arguments, redirects output, and connects programs with pipes; run with `exec USH.ELF`
-- Argument passing (argc/argv) to user programs across both kernel-shell `exec`/`bg` and `SYS_EXEC`
-- Keyboard focus handoff (`SYS_GIVE_FOREGROUND`): user-space shell hands the terminal to interactive children and reclaims it when they exit
-- Anonymous pipes (`SYS_PIPE`): `FD_PIPE_READ`/`FD_PIPE_WRITE` fd kinds with blocking reads/writes and automatic EOF on last write-end close
+- Argument passing (argc/argv) to user programs across both `exec`/`bg` and `SYS_EXEC`
+- Keyboard focus handoff (`SYS_GIVE_FOREGROUND`): the shell hands the terminal to interactive children and reclaims it when they exit
+- Anonymous pipes (`SYS_PIPE`): blocking reads/writes and automatic EOF on last write-end close
 - ELF executable loader (PT_LOAD segments into a process address space)
-- Sample user programs: `user/hello.c`, `user/echo.c`, `user/files.c`, `user/counter.c`, `user/forktest.c`, `user/fdcat.c`, `user/redir.c`, `user/cat2.c`, `user/ush.c`
-- `fasterfetch` — a neofetch-style system info screen (CPU brand via CPUID, live memory and uptime, colour palette)
-- Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `exec`, `bg`, `ps`, `kill`, `time`, `uptime`, `free`, `fasterfetch`, `reboot`
+- Sample user programs: `hello`, `echo`, `files`, `counter`, `forktest`, `fdcat`, `redir`, `cat2`
+- `fasterfetch` — a neofetch-style system info graphic (CPU brand via CPUID, live memory and uptime, colour palette swatches, Gordon mascot)
+- `peter` — fullscreen VGA mode-13h mascot splash with font save/restore
+- Shell commands: `help`, `clear`, `echo`, `about`, `ls [path]`, `pwd`, `cat`, `touch`, `write`, `rm`, `rename`, `mkdir`, `cd`, `exec`, `bg`, `ps`, `kill`, `time`, `uptime`, `free`, `fasterfetch`, `peter`, `reboot`
 
 ---
 
@@ -105,7 +107,7 @@ Active development. Working towards hosting a C compiler.
 | 0 | `sys_write` | Write a buffer to stdout (fd 1) |
 | 1 | `sys_exit` | Terminate process (exit code in `ebx`) |
 | 2 | `sys_getpid` | Get current process ID |
-| 3 | `sys_read` | Read from stdin (fd 0); blocks until at least 1 byte |
+| 3 | `sys_read` | Read from stdin (fd 0); blocks until at least 1 byte; echoes input |
 | 4 | `sys_sleep` | Sleep for N milliseconds |
 | 5 | `sys_readfile` | Read a whole file from disk into a buffer |
 | 6 | `sys_writefile` | Write a buffer to a file, replacing its contents |
@@ -120,6 +122,23 @@ Active development. Working towards hosting a C compiler.
 | 15 | `sys_dup2` | Make `ecx` refer to the same open file as `ebx` (redirection) |
 | 16 | `sys_give_foreground` | Transfer keyboard focus to the process with pid `ebx` |
 | 17 | `sys_pipe` | Create an anonymous pipe; `ebx` = user `int[2]` filled with `[read_fd, write_fd]` |
+| 18 | `sys_chdir` | Change the current working directory |
+| 19 | `sys_getcwd` | Copy the current working directory path into a user buffer |
+| 20 | `sys_mkdir` | Create a directory |
+| 21 | `sys_rmfile` | Delete a file |
+| 22 | `sys_rename` | Rename a file or directory |
+| 23 | `sys_listdir` | List a directory to the terminal |
+| 24 | `sys_uptime` | Return system uptime in seconds |
+| 25 | `sys_meminfo` | Fill a `uint32_t[2]` with `[used_mb, total_mb]` |
+| 26 | `sys_kill_pid` | Terminate a process by PID |
+| 27 | `sys_ps` | Print the process list to the terminal |
+| 28 | `sys_setcolor` | Set the VGA terminal text colour |
+| 29 | `sys_fasterfetch` | Run the graphical system-info screen (requires ring-0 VGA I/O) |
+| 30 | `sys_peter` | Run the fullscreen mascot splash (requires ring-0 VGA I/O) |
+| 31 | `sys_findprefix` | Fill a buffer with null-separated filename matches for tab completion |
+| 32 | `sys_readraw` | Read from stdin without echo (used by the shell for line editing) |
+| 33 | `sys_gettime` | Fill a `uint32_t[2]` with `[(h<<16)|(m<<8)|s, (y<<16)|(mo<<8)|d]` |
+| 34 | `sys_clear` | Clear the terminal screen |
 
 Syscall convention: number in `eax`, args in `ebx`/`ecx`/`edx`, return value in `eax`.
 
@@ -200,11 +219,10 @@ mcopy -i disk.img myfile.txt ::myfile.txt
 
 ## Known Issues
 
-- Shell currently runs in ring 0
 - Kernel heap is limited to the identity-mapped low 4MB of physical memory
 - SFN collision resolution uses `~1` suffix only; multiple files with the same first-6-char base will alias (rare in practice)
 
-  ## Star History
+## Star History
 
 <a href="https://www.star-history.com/?repos=Millenium2133%2FGordOS&type=timeline&legend=top-left">
  <picture>
