@@ -19,6 +19,7 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 - Physical memory manager with bitmap allocator
 - Kernel heap allocator (kmalloc/kfree) with splitting and coalescing
 - ATA PIO disk driver
+- **VFS layer** (`fs/vfs.h`) — a driver-agnostic filesystem interface; FAT32 is registered at boot via a `vfs_ops_t` struct; all kernel and syscall code talks only to the VFS, making future filesystem drivers a drop-in
 - FAT32 filesystem: mount, list, read, create, write, delete, rename files and directories
 - FAT32 Long Filename (LFN) support: filenames up to 255 characters, full UTF-16LE → ASCII, LFN-aware tab completion
 - **Lowercase filenames** — names with lowercase letters correctly generate LFN entries instead of being silently uppercased
@@ -56,7 +57,6 @@ A hobby OS built from scratch in C and x86 Assembly, made to learn the fundament
 Active development. Working towards hosting a C compiler.
 
 **Near term**
-- VFS layer abstracting FAT32 behind a unified file interface
 - Groundwork for hosting a C compiler (tcc or similar)
 
 **Long term**

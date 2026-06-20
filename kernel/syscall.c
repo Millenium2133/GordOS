@@ -6,7 +6,7 @@
 #include "keyboard.h"
 #include "pit.h"
 #include "rtc.h"
-#include "fat32.h"
+#include "vfs.h"
 #include "pmm.h"
 #include "kmalloc.h"
 #include "wbuf.h"
@@ -150,7 +150,7 @@ static int file_read(file_desc_t* f, char* buf, uint32_t len)
     if (f->writable)
         return -1; // opened for writing
 
-    uint32_t cbytes = fat32_cluster_size();
+    uint32_t cbytes = vfs_cluster_size();
 
     uint8_t* cluster_buf = kmalloc(cbytes);
     if (!cluster_buf)
@@ -158,9 +158,9 @@ static int file_read(file_desc_t* f, char* buf, uint32_t len)
 
     uint32_t got = 0;
     while (got < len && f->pos < f->size &&
-           f->cur_cluster >= 2 && f->cur_cluster < FAT32_EOC)
+           f->cur_cluster >= 2 && f->cur_cluster < VFS_CLUSTER_EOC)
     {
-        if (fat32_read_cluster(f->cur_cluster, cluster_buf) != 0)
+        if (vfs_read_cluster(f->cur_cluster, cluster_buf) != 0)
             break;
 
         uint32_t avail = cbytes - f->cluster_offset;   // left in this cluster
@@ -179,7 +179,7 @@ static int file_read(file_desc_t* f, char* buf, uint32_t len)
 
         if (f->cluster_offset >= cbytes)
         {
-            f->cur_cluster    = fat32_next_cluster(f->cur_cluster);
+            f->cur_cluster    = vfs_next_cluster(f->cur_cluster);
             f->cluster_offset = 0;
         }
     }
@@ -286,7 +286,7 @@ static int sys_readfile(const char* upath, char* buf, uint32_t max)
         return -1;
 
     uint32_t size = 0;
-    if (fat32_read_file(path, buf, max, &size) != 0)
+    if (vfs_read_file(path, buf, max, &size) != 0)
         return -1;
 
     return (int)size;
@@ -302,7 +302,7 @@ static int sys_writefile(const char* upath, const char* buf, uint32_t len)
     if (!user_range_ok(buf, len))
         return -1;
 
-    return fat32_write_file(path, buf, len);
+    return vfs_write_file(path, buf, len);
 }
 
 // O_* flags for sys_open (ecx). Default (0) is read-only; O_WRITE
@@ -344,7 +344,7 @@ static int sys_open(const char* upath, uint32_t flags)
     }
 
     uint32_t first_cluster = 0, size = 0;
-    if (fat32_lookup_file(path, &first_cluster, &size) != 0)
+    if (vfs_lookup(path, &first_cluster, &size) != 0)
         return -1;
 
     f->kind          = FD_FILE;
@@ -484,7 +484,7 @@ static int sys_exec(const char* upath, const char** uargv)
         return -1;
 
     uint32_t size = 0;
-    if (fat32_read_file(path, buf, 65536, &size) != 0)
+    if (vfs_read_file(path, buf, 65536, &size) != 0)
     {
         kfree(buf);
         return -1;
@@ -630,13 +630,13 @@ static int sys_chdir(const char* upath)
 {
     char path[256];
     if (copy_user_path(upath, path, sizeof(path)) != 0) return -1;
-    return fat32_cd(path);
+    return vfs_chdir(path);
 }
 
 static int sys_getcwd(char* ubuf, uint32_t size)
 {
     if (!user_range_ok(ubuf, size)) return -1;
-    const char* cwd = fat32_get_cwd_path();
+    const char* cwd = vfs_get_cwd();
     uint32_t i;
     for (i = 0; cwd[i] && i < size - 1; i++) ubuf[i] = cwd[i];
     ubuf[i] = '\0';
@@ -647,14 +647,14 @@ static int sys_mkdir_sc(const char* upath)
 {
     char path[256];
     if (copy_user_path(upath, path, sizeof(path)) != 0) return -1;
-    return fat32_mkdir(path);
+    return vfs_mkdir(path);
 }
 
 static int sys_rmfile(const char* upath)
 {
     char path[256];
     if (copy_user_path(upath, path, sizeof(path)) != 0) return -1;
-    return fat32_delete_file(path);
+    return vfs_delete_file(path);
 }
 
 static int sys_rename_sc(const char* uold, const char* unew)
@@ -662,14 +662,14 @@ static int sys_rename_sc(const char* uold, const char* unew)
     char oldp[256], newp[256];
     if (copy_user_path(uold, oldp, sizeof(oldp)) != 0) return -1;
     if (copy_user_path(unew, newp, sizeof(newp)) != 0) return -1;
-    return fat32_rename_file(oldp, newp);
+    return vfs_rename(oldp, newp);
 }
 
 static int sys_listdir(const char* upath)
 {
     char path[256];
     if (copy_user_path(upath, path, sizeof(path)) != 0) return -1;
-    return fat32_list_dir(path);
+    return vfs_list_dir(path);
 }
 
 static int sys_uptime(void)
@@ -809,7 +809,7 @@ static int sys_findprefix(const char* uprefix, char* ubuf, uint32_t bufsz)
     if (!user_range_ok(ubuf, bufsz)) return -1;
 
     char matches[16][256];
-    int count = fat32_find_prefix(prefix, matches, 16);
+    int count = vfs_find_prefix(prefix, matches, 16);
 
     uint32_t pos = 0;
     for (int i = 0; i < count && pos + 2 < bufsz; i++)

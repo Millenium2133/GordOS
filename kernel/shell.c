@@ -1,7 +1,7 @@
 #include "shell.h"
 #include "vga.h"
 #include "string.h"
-#include "fat32.h"
+#include "vfs.h"
 #include "kmalloc.h"
 #include "rtc.h"
 #include "pmm.h"
@@ -126,7 +126,7 @@ static void cmd_about(void)
 static void cmd_ls(const char* args)
 {
 	const char* path = (args && *args) ? args : "";
-	if (fat32_list_dir(path) != 0)
+	if (vfs_list_dir(path) != 0)
 		terminal_writestring("ls: cannot list directory\n");
 }
 
@@ -148,7 +148,7 @@ static void cmd_cat(const char* args)
 		return;
 	}
 
-	if (fat32_read_file(args, buf, 65536, &size) != 0)
+	if (vfs_read_file(args, buf, 65536, &size) != 0)
 	{
 		terminal_writestring("cat: file not found\n");
 		kfree(buf);
@@ -176,13 +176,13 @@ static void cmd_touch(const char* args)
 	// Don't truncate a file that already exists
 	uint32_t size = 0;
 	char probe;
-	if (fat32_read_file(args, &probe, 0, &size) == 0)
+	if (vfs_read_file(args, &probe, 0, &size) == 0)
 	{
 		terminal_writestring("touch: file already exists\n");
 		return;
 	}
 
-	if (fat32_write_file(args, "", 0) == 0)
+	if (vfs_write_file(args, "", 0) == 0)
 	{
 		terminal_writestring("Created: ");
 		terminal_writestring(args);
@@ -211,7 +211,7 @@ static void cmd_write(const char* args)
 	if (*content == ' ')
 		content++;
 
-	if (fat32_write_file(filename, content, strlen(content)) == 0)
+	if (vfs_write_file(filename, content, strlen(content)) == 0)
 	{
 		terminal_writestring("Written to: ");
 		terminal_writestring(filename);
@@ -230,7 +230,7 @@ static void cmd_rm(const char* args)
 		return;
 	}
 
-	if (fat32_delete_file(args) == 0)
+	if (vfs_delete_file(args) == 0)
 	{
 		terminal_writestring("Deleted: ");
 		terminal_writestring(args);
@@ -267,7 +267,7 @@ static void cmd_rename(const char* args)
 	if (*second == ' ')
 		second++;
 
-	if (fat32_rename_file(oldname, second) == 0)
+	if (vfs_rename(oldname, second) == 0)
 	{
 		terminal_writestring("Renamed to: ");
 		terminal_writestring(second);
@@ -279,7 +279,7 @@ static void cmd_rename(const char* args)
 
 static void cmd_pwd(void)
 {
-	terminal_writestring(fat32_get_cwd_path());
+	terminal_writestring(vfs_get_cwd());
 	terminal_putchar('\n');
 }
 
@@ -292,7 +292,7 @@ static void cmd_mkdir(const char* args)
 		return;
 	}
 
-	if (fat32_mkdir(args) == 0)
+	if (vfs_mkdir(args) == 0)
 	{
 		terminal_writestring("Created directory: ");
 		terminal_writestring(args);
@@ -311,7 +311,7 @@ static void cmd_cd(const char* args)
 		return;
 	}
 
-	if (fat32_cd(args) != 0)
+	if (vfs_chdir(args) != 0)
 		terminal_writestring("cd: Directory not found\n");
 }
 
@@ -393,7 +393,7 @@ static process_t* start_program(const char* args, int foreground, const char* wh
 	}
 
 	uint32_t size = 0;
-	if (fat32_read_file(filename, buf, 65536, &size) != 0)
+	if (vfs_read_file(filename, buf, 65536, &size) != 0)
 	{
 		terminal_writestring(who);
 		terminal_writestring(": file not found\n");
@@ -825,7 +825,7 @@ static void shell_prompt(void)
 	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK));
 	terminal_writestring("GordOS");
 	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
-	terminal_writestring(fat32_get_cwd_path());
+	terminal_writestring(vfs_get_cwd());
 	terminal_setcolor(vga_entry_color(VGA_COLOR_WHITE, VGA_COLOR_BLACK));
 	terminal_writestring("> ");
 	terminal_setcolor(vga_entry_color(VGA_COLOR_LIGHT_GREY, VGA_COLOR_BLACK));
@@ -998,7 +998,7 @@ void shell_handle_char(char c)
 		else
 		{
 			// Complete filenames/directories from the filesystem
-			count = fat32_find_prefix(prefix, matches, 16);
+			count = vfs_find_prefix(prefix, matches, 16);
 		}
 
 		if (count == 1)
@@ -1152,7 +1152,7 @@ int shell_launch_ush(void)
 	if (!buf) return -1;
 
 	uint32_t size = 0;
-	if (fat32_read_file("USH.ELF", buf, 65536, &size) != 0)
+	if (vfs_read_file("USH.ELF", buf, 65536, &size) != 0)
 	{
 		kfree(buf);
 		return -1;

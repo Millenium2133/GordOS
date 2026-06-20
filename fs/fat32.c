@@ -1,4 +1,5 @@
 #include "fat32.h"
+#include "vfs.h"
 #include "ata.h"
 #include "kmalloc.h"
 #include "vga.h"
@@ -1501,3 +1502,19 @@ static int fat32_create_entry(const char* name, uint32_t dir_cluster,
 
 uint32_t fat32_get_cwd_cluster(void) { return cwd_cluster; }
 const char* fat32_get_cwd_path(void) { return cwd_path; }
+
+const vfs_ops_t fat32_vfs_ops = {
+    .read_file    = fat32_read_file,
+    .write_file   = fat32_write_file,
+    .delete_file  = fat32_delete_file,
+    .rename       = fat32_rename_file,
+    .mkdir        = fat32_mkdir,
+    .list_dir     = fat32_list_dir,
+    .chdir        = fat32_cd,
+    .get_cwd      = fat32_get_cwd_path,
+    .lookup       = fat32_lookup_file,
+    .find_prefix  = fat32_find_prefix,
+    .cluster_size = fat32_cluster_size,
+    .next_cluster = fat32_next_cluster,
+    .read_cluster = fat32_read_cluster,
+};

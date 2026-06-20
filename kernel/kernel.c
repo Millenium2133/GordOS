@@ -16,6 +16,7 @@
 #include "kmalloc.h"
 #include "ata.h"
 #include "fat32.h"
+#include "vfs.h"
 #include "paging.h"
 #include "pit.h"
 #include "syscall.h"
@@ -49,7 +50,10 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	{
 		terminal_writestring("ATA drive DETECTED\n");
 		if (fat32_init() == 0)
+		{
+			vfs_register(&fat32_vfs_ops);
 			terminal_writestring("FAT32 MOUNTED\n");
+		}
 		else
 			terminal_writestring("FAT32 mount FAILED\n");
 	}

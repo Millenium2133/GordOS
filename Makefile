@@ -35,6 +35,7 @@ OBJS = \
 	memory/paging.o \
 	memory/kmalloc.o \
 	\
+	fs/vfs.o \
 	fs/fat32.o \
 	\
 	kernel/kernel.o \
@@ -177,7 +178,10 @@ memory/kmalloc.o: memory/kmalloc.c memory/kmalloc.h memory/pmm.h
 # + Filesystem       +
 # +------------------+
 
-fs/fat32.o: fs/fat32.c fs/fat32.h drivers/ata.h memory/kmalloc.h
+fs/vfs.o: fs/vfs.c fs/vfs.h
+	$(CC) $(CFLAGS) -c fs/vfs.c -o fs/vfs.o
+
+fs/fat32.o: fs/fat32.c fs/fat32.h fs/vfs.h drivers/ata.h memory/kmalloc.h
 	$(CC) $(CFLAGS) -Ifs -c fs/fat32.c -o fs/fat32.o
 
 # +------------------+
@@ -191,13 +195,13 @@ kernel/kernel.o: kernel/kernel.c cpu/gdt.h cpu/idt.h drivers/pic.h \
 	$(CC) $(CFLAGS) -c kernel/kernel.c -o kernel/kernel.o
 
 kernel/shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h \
-                drivers/rtc.h drivers/pit.h fs/fat32.h memory/pmm.h memory/kmalloc.h \
+                drivers/rtc.h drivers/pit.h fs/vfs.h memory/pmm.h memory/kmalloc.h \
                 kernel/process.h kernel/elf.h memory/paging.h drivers/keyboard.h
 	$(CC) $(CFLAGS) -c kernel/shell.c -o kernel/shell.o
 
 kernel/syscall.o: kernel/syscall.c kernel/syscall.h cpu/idt.h kernel/process.h \
                   kernel/pipe.h drivers/keyboard.h drivers/pit.h drivers/rtc.h \
-                  fs/fat32.h memory/pmm.h display/vga13.h kernel/scheduler.h
+                  fs/vfs.h memory/pmm.h display/vga13.h kernel/scheduler.h
 	$(CC) $(CFLAGS) -c kernel/syscall.c -o kernel/syscall.o
 
 kernel/usermode.o: kernel/usermode.c kernel/usermode.h cpu/gdt.h

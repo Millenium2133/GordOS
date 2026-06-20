@@ -1,6 +1,6 @@
 #include "wbuf.h"
 #include "kmalloc.h"
-#include "fat32.h"
+#include "vfs.h"
 #include "string.h"
 
 // Cap on a single redirected output. Plenty for program output; writes
@@ -48,7 +48,7 @@ void wbuf_unref(wbuf_t* w)
         return;
 
     // Last reference: commit the accumulated bytes to disk, then free.
-    fat32_write_file(w->path, w->buf, w->len);
+    vfs_write_file(w->path, w->buf, w->len);
     kfree(w->buf);
     kfree(w);
 }

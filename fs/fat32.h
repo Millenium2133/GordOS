@@ -2,6 +2,7 @@
 #define FAT32_H
 
 #include <stdint.h>
+#include "vfs.h"
 
 #define FAT32_EOC       0x0FFFFFF8
 #define FAT32_FREE      0x00000000
@@ -36,5 +37,8 @@ int fat32_find_prefix(const char* prefix, char matches[][256], int max_matches);
 
 uint32_t fat32_get_cwd_cluster(void);
 const char* fat32_get_cwd_path(void);
+
+// VFS ops struct — pass to vfs_register() after fat32_init() succeeds.
+extern const vfs_ops_t fat32_vfs_ops;
 
 #endif
