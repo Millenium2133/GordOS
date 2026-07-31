@@ -1,8 +1,0 @@
-{
-    "files.associations": {
-        "*.h": "c",
-        "*.s": "asm-collection"
-    },
-    "editor.tabSize": 4,
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/compile_commands.json"
-}

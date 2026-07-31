@@ -1,0 +1,20 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-gordos",
+      "type": "shell",
+      "command": "make",
+      "args": ["-j$(nproc)"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "run-gordos-qemu",
+      "type": "shell",
+      "command": "qemu-system-i386",
+      "args": ["-s", "-S", "-fda", "${workspaceFolder}/build/gordos.img", "-serial", "stdio"],
+      "problemMatcher": []
+    }
+  ]
+}
