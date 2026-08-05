@@ -875,7 +875,7 @@ void _start(void)
     setcolor(COLOR(VGA_LIGHT_GREEN, VGA_BLACK));
     swrite("GordOS");
     resetcolor();
-    swrite(" shell — type 'help' for commands\n");
+    swrite(" shell - type 'help' for commands\n");
 
     for (;;)
     {
