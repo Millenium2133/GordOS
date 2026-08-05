@@ -8,31 +8,30 @@ GordOS is a hobbyist operating system built from scratch in C and x86 Assembly. 
 
 
 ## Chapters
-[What GordOS Can Currently Do](#What-GordOS-Can-Currently-Do)
-[Current Shell Commands](#Current-Shell-Commands)
-[Built-In User Programs](#Built-In-User-Programs)
-[Development Status](#Development-Status)
-[Part 1 Finishing The Kernel/Userland Split](#Part-1-Finishing-The-Kernel/Userland-Split)
-[Part 2 Window Manager](#Part-2-Window-Manager)
-[Suggested Order Of Operations](#Suggested-Order-Of-Operations)
-[Technical Specifications](#Technical-Specifications)
-[Build Requirements](#Build-Requirements)
-[Hardware Requirements](#Hardware-Requirements)
-[Memory Layout](#Memory-Layout)
-[Syscall Table](#Syscall-Table)
-[Building And Running GordOS](#Building-And-Running-GordOS)
-[Install The Dependencies](#Install-The-Dependencies)
-[Clone The Repository](#Clone-The-Repository)
-[Set Up The Cross-Compiler](#Set-Up-The-Cross-Compiler)
-[Build And Run](#Build-And-Run)
-[Known Issues](#Known-Issues)
-[Contributing](#Contributing) 
-
+* [What GordOS Can Currently Do](#What-GordOS-Can-Currently-Do)
+* [Current Shell Commands](#Current-Shell-Commands)
+* [Built-In User Programs](#Built-In-User-Programs)
+* [Development Status](#Development-Status)
+* [Part 1 Finishing The Kernel/Userland Split](#Part-1-Finishing-The-Kernel/Userland-Split)
+* [Part 2 Window Manager](#Part-2-Window-Manager)
+* [Suggested Order Of Operations](#Suggested-Order-Of-Operations)
+* [Technical Specifications](#Technical-Specifications)
+* [Build Requirements](#Build-Requirements)
+* [Hardware Requirements](#Hardware-Requirements)
+* [Memory Layout](#Memory-Layout)
+* [Syscall Table](#Syscall-Table)
+* [Building And Running GordOS](#Building-And-Running-GordOS)
+* [Install The Dependencies](#Install-The-Dependencies)
+* [Clone The Repository](#Clone-The-Repository)
+* [Set Up The Cross-Compiler](#Set-Up-The-Cross-Compiler)
+* [Build And Run](#Build-And-Run)
+* [Known Issues](#Known-Issues)
+* [Contributing](#Contributing) 
 
 ## Other Documentation
-[Local LLM's](Local%20LLM's.md)
-[Visual Studio Code](Visual%20Studio%20Code.md)
-[Codebase requirements](Codebase%20requirements.md) 
+* [Local LLM's](Local%20LLM's.md)
+* [Visual Studio Code](Visual%20Studio%20Code.md)
+* [Codebase requirements](Codebase%20requirements.md)
 
 ## What GordOS Can Currently Do
 
