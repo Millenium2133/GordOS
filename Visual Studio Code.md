@@ -1,4 +1,4 @@
-Visual Studio Code will be the IDE of choice for [[GordOS]] at the current moment for it's extensions as well as it's IntelliSense autocomplete that may help speed up development and can reduce bugs as well as its native Linux support.
+Visual Studio Code will be the IDE of choice for [GordOS](README.md) at the current moment for it's extensions as well as it's IntelliSense autocomplete that may help speed up development and can reduce bugs as well as its native Linux support.
 
 The setup for Visual Studio Code may be a little challenging as we need to use a different compiler, specifically, the [OSDev GCC Cross-Compiler](https://wiki.osdev.org/GCC_Cross-Compiler).
 
