@@ -12,7 +12,7 @@ GordOS is a hobbyist operating system built from scratch in C and x86 Assembly. 
 * [Current Shell Commands](#Current-Shell-Commands)
 * [Built-In User Programs](#Built-In-User-Programs)
 * [Development Status](#Development-Status)
-* [Part 1 Finishing The Kernel/Userland Split](#Part-1-Finishing-The-Kernel/Userland-Split)
+* [Part 1 Finishing The Kernel/Userland Split](#Part-1-Finishing-The-KernelUserland-Split)
 * [Part 2 Window Manager](#Part-2-Window-Manager)
 * [Suggested Order Of Operations](#Suggested-Order-Of-Operations)
 * [Technical Specifications](#Technical-Specifications)
