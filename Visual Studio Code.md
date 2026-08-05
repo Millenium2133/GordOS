@@ -30,7 +30,7 @@ the main .vscode file path is already in GordOS's main repo, but may need some t
   "configurations": [
     {
       "name": "GordOS",
-      "compilerPath": "i686-elf-gcc",
+      "compilerPath": "$HOME/opt/cross/bin/i686-elf-gcc",
       "cStandard": "c17",
       "intelliSenseMode": "gcc-x86",
       "defines": ["__i386__", "GORDOS_KERNEL"],
