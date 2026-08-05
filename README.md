@@ -311,6 +311,9 @@ Before we begin building the cross compiler, there are some tools you will need 
 | grub-pc-bin | Provides GRUB bootloader module for traditional PC's using legacy BIOS                   | apt, pacman (just grub), dnf (grub2-pc-bin)    |
 | grub-common | Shared admin files, tools and infrastructure used by GRUB                                | apt, pacman (just grub), dnf (grub2-common)    |
 | qemu-system | Kernel Virtualisation for the OS to run.                                                 | apt, pacman (qemu-full), dnf (qemu-system-x86) |
+| qemu-utils  | provides qemu-img, used to create the raw disk.img file									 | disk.img file	apt (pacman/dnf bundle this into the main qemu package.) |
+| dosftools   | provides mkfs.fat, used to format disk.img as FAT32 before user programs are copied in   | apt, pacman, dnf
+
 Test to make sure they installed correctly before moving on.
 
 
