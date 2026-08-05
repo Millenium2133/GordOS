@@ -8,11 +8,11 @@ GordOS is a hobbyist operating system built from scratch in C and x86 Assembly. 
 
 
 ## Chapters
-[[#What GordOS Can Currently Do]] [[#Current Shell Commands]] [[#Built-In User Programs]][[#Development Status]] [[#Part 1 Finishing The Kernel/Userland Split]] [[#Part 2 Window Manager]] [[#Suggested Order Of Operations]] [[#Technical Specifications]] [[#Build Requirements]] [[#Hardware Requirements]] [[#Memory Layout]] [[#Syscall Table]] [[#Building And Running GordOS]] [[#Install The Dependencies]] [[#Clone The Repository]] [[#Set Up The Cross-Compiler]] [[#Build And Run]] [[#Known Issues]] [[#Contributing]] 
+[What GordOS Can Currently Do](#What-GordOS-Can-Currently-Do) [Current Shell Commands](#Current-Shell-Commands) [Built-In User Programs](#Built-In-User-Programs) [Development Status](#Development-Status) [Part 1 Finishing The Kernel/Userland Split](#Part-1-Finishing-The-Kernel/Userland-Split) [Part 2 Window Manager](#Part-2-Window-Manager) [Suggested Order Of Operations](#Suggested-Order-Of-Operations) [Technical Specifications](#Technical-Specifications) [Build Requirements](#Build-Requirements) [Hardware Requirements](#Hardware-Requirements) [Memory Layout](#Memory-Layout) [Syscall Table](#Syscall-Table) [Building And Running GordOS](#Building-And-Running-GordOS) [Install The Dependencies](#Install-The-Dependencies) [Clone The Repository](#Clone-The-Repository) [Set Up The Cross-Compiler](#Set-Up-The-Cross-Compiler) [Build And Run](#Build-And-Run) [Known Issues](#Known-Issues) [Contributing](#Contributing) 
 
 
 ## Other Documentation
-[[Local LLM's]] [[Visual Studio Code]] [[Codebase requirements]] 
+[Local LLM's](Local%20LLM's.md) [Visual Studio Code](Visual%20Studio%20Code.md) [Codebase requirements](Codebase%20requirements.md) 
 
 ## What GordOS Can Currently Do
 
@@ -112,7 +112,7 @@ The steps needed to get to that goal include:
 ### Part 1: Finishing The Kernel/Userland Split
 
 **1.1 Eliminate the remaining ring 0 only operations**
-	Two syscalls require ring 0 VGA I/O, these being `sys_fasterfetch` and `sys_peter`. These exist because right now, the only way to touch the framebuffer/VGA hardware is from inside the kernel, meaning that right now, anything graphical has to be implemented as a syscall rather than using syscalls. A full split would have `fasterfetch` and `peter` as ordinary ELF binaries in /user that call generic drawing syscalls. this will be subsumed by the framebuffer/graphics work. I will talk more about in [[#Part 2 Window Manager]]. Once user processes can safely map and  write to a framebuffer, `fasterfetch` and `peter` should be rewritten as normal user programs.
+	Two syscalls require ring 0 VGA I/O, these being `sys_fasterfetch` and `sys_peter`. These exist because right now, the only way to touch the framebuffer/VGA hardware is from inside the kernel, meaning that right now, anything graphical has to be implemented as a syscall rather than using syscalls. A full split would have `fasterfetch` and `peter` as ordinary ELF binaries in /user that call generic drawing syscalls. this will be subsumed by the framebuffer/graphics work. I will talk more about in [#Part 2 Window Manager](#Part-2-Window-Manager). Once user processes can safely map and  write to a framebuffer, `fasterfetch` and `peter` should be rewritten as normal user programs.
 
 **1.2 Whole-file Syscalls vs fd-based Syscalls**
 	Right now, there is both `sys_readfile` and `sys_writefile`(read/write an entire file in one call) *and* the fd-based set (`sys_open`/`sys_read_fd`/`sys_write_fd`/`sys_close`). The whole file versions were the original API before fd-based I/O existed and are now redundant. Every whole-file operation is expressible as `open` -> `read_fd` in a loop -> `close`. Right now, `ush` or the kernel shell's `cat`/`write` commands are most likely still calling `sys_readfile` and `sys_writefile`. We would want to migrate those call sites to the fd-based API, the removing `sys_readfile` and `sys_writefile`.
@@ -357,4 +357,4 @@ tools/boot-test.sh
 ---
 ## Contributing
 
-If you would like to contribute to GordOS, please read through the [[Codebase requirements]], [[Visual Studio Code]] and [[Local LLM's]] pages before getting started. Any help is greatly appreciated.
+If you would like to contribute to GordOS, please read through the [Codebase requirements](Codebase%20requirements), [Visual Studio Code](Visual%20Studio%20Code) and [Local LLM's](Local%20LLM's) pages before getting started. Any help is greatly appreciated.
