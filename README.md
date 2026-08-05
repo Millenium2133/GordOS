@@ -347,7 +347,8 @@ Test to make sure the compiler is working by running the following command:
 $HOME/opt/cross/bin/$TARGET-gcc --version
 ```
 
-
+### Using Visual Studio Code
+To use Visual Studio Code with GordOS, you can follow the [Visual Studio Code](Visual%20Studio%20Code.md) guide.
 
 
 ### Build And Run
