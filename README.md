@@ -9,7 +9,7 @@ GordOS is a hobbyist operating system built from scratch in C and x86 Assembly. 
 
 ## Chapters
 * [What GordOS Can Currently Do](#What-GordOS-Can-Currently-Do)
-* ###[Current Shell Commands](#Current-Shell-Commands)
+* [Current Shell Commands](#Current-Shell-Commands)
 * * [Built-In User Programs](#Built-In-User-Programs)
 * [Development Status](#Development-Status)
 * * [Part 1 Finishing The Kernel/Userland Split](#Part-1-Finishing-The-KernelUserland-Split)
