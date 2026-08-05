@@ -376,4 +376,4 @@ tools/boot-test.sh
 ---
 ## Contributing
 
-If you would like to contribute to GordOS, please read through the [Codebase requirements](Codebase%20requirements), [Visual Studio Code](Visual%20Studio%20Code) and [Local LLM's](Local%20LLM's) pages before getting started. Any help is greatly appreciated.
+If you would like to contribute to GordOS, please read through the [Codebase requirements](Codebase%20requirements.md), [Visual Studio Code](Visual%20Studio%20Code.md) and [Local LLM's](Local%20LLM's.md) pages before getting started. Any help is greatly appreciated.
