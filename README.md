@@ -11,14 +11,9 @@ GordOS is a hobbyist operating system built from scratch in C and x86 Assembly. 
 2. [Current Shell Commands](#Current-Shell-Commands)
    1. [Built-In User Programs](#Built-In-User-Programs)
 3. [Development Status](#Development-Status)
-   1. [The Plan](#The-Plan)
-   2. [Phase 1: libc](#Phase-1-libc)
-   3. [Phase 2: Kernel Cleanup](#Phase-2-Kernel-Cleanup)
-   4. [Phase 3: Init Program](#Phase-3-Init-Program)
-   5. [Phase 4: Port Existing User Programs](#Phase-4-Port-Existing-User-Programs)
-   6. [Phase 5: Build System and The Rename](#Phase-5-Build-System-and-The-Rename)
-   7. [Phase 6: TCC Compiler Port](#Phase-6-TCC-Compiler-Port)
-   8. [Phase 7: Window Manager](#Phase-7-Window-Manager)
+   1. [Phase 1: TCC Compiler Port](#Phase-1-TCC-Compiler-Port)
+   2. [Phase 2: Packages](#Phase-2-Packages)
+   3. [Phase 3: Window Manager](#Phase-3-Window-Manager)
 4. [Technical Specifications](#Technical-Specifications)
    1. [Build Requirements](#Build-Requirements)
    2. [Hardware Requirements](#Hardware-Requirements)
@@ -37,21 +32,24 @@ GordOS is a hobbyist operating system built from scratch in C and x86 Assembly. 
 * [Visual Studio Code](Visual%20Studio%20Code.md)
 * [Codebase requirements](Codebase%20requirements.md)
 
+---
+
 ## What GordOS Can Currently Do
 
 - Boots via GRUB on real x86 hardware and QEMU.
 - Higher half kernel running at `0xC0000000`.
 - VGA text mode terminal with colour, scrolling and a hardware cursor.
 - PS/2 keyboard driver with full scancode translation.
-- Ring 3 userspace shell `USH`. (launches automatically at boot.)
+- Ring 3 userspace shell `USH`. (launches automatically at boot, falls back to kernel shell if missing.)
 - Interactive shell with command history, cursor movement and tab autocomplete.
-- Tab autocomplete on both commands, filenames and directories.
+- Tab autocomplete on commands, filenames and directories.
 - Shell keyboard shortcuts: Ctrl+L clears the screen, Ctrl+C cancels the current line/running command.
+- Pipes (`|`) and output redirection (`>`) for external programs.
 - Physical memory manager with bitmap allocator.
 - Kernel heap allocator (kmalloc/kfree) with splitting and coalescing.
 - ATA PIO disk driver.
 - VFS Layer `fs/vfs.h` is a driver-agnostic filesystem interface.
-- FAT32 filesystem, includes mount, list, read, create, write delete and rename files and directories.
+- FAT32 filesystem, includes mount, list, read, create, write, delete and rename files and directories.
 - FAT32 Long Filename (LFN) support; allows filenames up to 255 characters.
 - Lowercase filenames.
 - Subdirectory navigation with absolute and relative path support.
@@ -65,16 +63,16 @@ GordOS is a hobbyist operating system built from scratch in C and x86 Assembly. 
 - Process structures with per process page directories and kernel stacks.
 - Preemptive round-robin scheduler: PIT-driven context switches between a kernel task, foreground and background processes.
 - Foreground `exec` and background `bg` execution with `ps` and `kill`.
-- Process remapping meaning that exited and killed processes are free'd by the kernel task with no memory leaks.
+- Process reaping - exited and killed processes are freed by the kernel task with no memory leaks.
 - `fork()` (full eager address-space copy) and in place `exec()` that keeps the PID.
-- `wait()` / `waitpid()` ; a process can spawn children and block until they exit, then collects the exit code.
+- `wait()` / `waitpid()`; a process can spawn children and block until they exit, then collect the exit code.
 - File-descriptor I/O.
 - Blocking `read()`, a process waiting on the keyboard sleeps off the run queue and is woken on input.
 - Standard streams (stdin/stdout/stderr as fds 0/1/2) with `write`/`read` routed through them.
 - Writable file descriptors and `dup2`, enabling `cmd > file` style output redirection.
 - Argument passing (argc/argv) to user programs across both `exec`/`bg` and `SYS_EXEC`.
-- Keyboard focus handoff (`SYS_GIVE_FOREGROUND`), the shell hands the terminal to the inactive children and reclaims it when they exit.
-- Anonymous pipes (`SYS_PIPE`), Blocks read/write and automatic EOF on last write-end close.
+- Keyboard focus handoff (`SYS_GIVE_FOREGROUND`), the shell hands the terminal to foreground children and reclaims it when they exit.
+- Anonymous pipes (`SYS_PIPE`), blocks read/write and automatic EOF on last write-end close.
 
 ---
 
@@ -83,223 +81,148 @@ GordOS is a hobbyist operating system built from scratch in C and x86 Assembly. 
 GordOS has quite the handful of shell commands built in, with more to come. Here is a list of all the current commands and what they do.
 
 **Filesystem commands**
-- mkdir (directory name) = makes a new directory.
-- rename (file name or directory name) (new file name or directory name) = changes the name of a file or directory.
-- ls (/path/to/dir) = lists everything in the specified path.
-- cd (/path/to/dir) = Changes directory to the specified path.
-- cat (file.txt) = prints the contents of the file.
-- touch (file.txt) = creates a single empty file .
-- rm (file.txt) = removes specified file.
-- write (any text you want) (file.txt) = Writes text to a specified file.
-- pwd = Prints the working directory (The current directory you are in.)
+- `mkdir (directory name)` - makes a new directory.
+- `rename (old name) (new name)` - changes the name of a file or directory.
+- `ls (/path/to/dir)` - lists everything in the specified path.
+- `cd (/path/to/dir)` - changes directory to the specified path.
+- `cat (file.txt)` - prints the contents of the file.
+- `touch (file.txt)` - creates a single empty file.
+- `rm (file.txt)` - removes the specified file.
+- `write (text) (file.txt)` - writes text to a specified file.
+- `pwd` - prints the current working directory.
 
 **Useful Commands**
-- clear = Clears the screen.
-- echo (literally anything) = prints the text back to the screen, more features for that is in the works.
-- help = Prints out a list of commands and what they do in the terminal.
-- fasterfetch = the faster version of fastfetch because its programmed directly into the OS.
-- peter = Prints out a picture of Peter Griffin on the terminal.
-- exec (Name-of-user-program) = executes the specified user program.
-- bg (Name-of-user-program) = executes the specified user program in the background.
-- ps = View all currently running processes.
-- kill (name-of-user-program) = Kills the specified user program.
-- time = prints current date and time.
-- uptime = Prints how long the system has been on  for.
-- free = Shows amount of free system memory available.
-- reboot = reboots the system.
+- `clear` - clears the screen.
+- `echo (text)` - prints the text back to the screen.
+- `about` - shows information about GordOS.
+- `help` - prints a list of commands and what they do.
+- `fasterfetch` - system info screen, programmed directly into the OS.
+- `peter` - prints a picture of Peter Griffin on the terminal.
+- `exec (program)` - executes the specified user program in the foreground.
+- `bg (program)` - executes the specified user program in the background.
+- `ps` - view all currently running processes.
+- `kill (pid)` - kills the process with the specified PID.
+- `time` - prints current date and time.
+- `uptime` - prints how long the system has been running.
+- `free` - shows amount of free system memory.
+- `reboot` - reboots the system.
+- `exit` - exits the shell.
+
+Programs can also be run by typing their name directly without `exec`, e.g. `HELLO.ELF`.
 
 ---
 
 ## Built-In User Programs
 
-Inside of GordOS, there is a set of built-in sample programs for you to try out, these include:
+Inside GordOS there is a set of built-in sample programs to try out:
 
 - hello
 - echo
 - files
 - counter
+- crash
 - forktest
 - fdcat
 - redir
 - cat2
 
-You can run these programs by using the `exec` command.
+You can run these programs by using the `exec` command, or by typing their name directly. `crash` is particularly useful for testing fault recovery - it deliberately dereferences a null pointer, which should print a page fault report and return you to the shell.
 
 ---
 
 ## Development Status
 
-Development status of GordOS is currently ongoing. Updates will mainly be coming in fortnightly. Bug fixes may come in sooner.
+Development of GordOS is currently ongoing. Updates will mainly be coming in fortnightly. Bug fixes may come in sooner.
 
-### The Plan
-
-The long term goal for GordOS is a clean Unix-style separation between the kernel and userland. The kernel should do the absolute minimum, CPU initialisation, memory detection, core hardware drivers, process management and syscalls, then hand off to userspace as fast as possible. Everything else lives in userspace.
-
-When this split is complete, GordOS will be renamed. The kernel will become **Gord**, and the userland packages will live in separate repos under a **gord-packages** umbrella. Each package will be its own repo so people who only want one package don't have to clone all of them. Packages will be cloned inside the Gord kernel folder:
-
-```
-GordOS/          ← kernel repo (will become Gord/)
-    gord-libc/   ← clone packages here
-    gord-init/
-    gord-ush/
-    ...
-```
-
-The window manager will be an optional package — users who want a GUI can install it, users who don't are unaffected.
-
-The steps to get there, in order:
+The goal for GordOS is to become a self-hosting system - one where programs can be written and compiled inside GordOS itself rather than requiring a Linux host. The window manager is still the long term GUI goal. The steps to get there:
 
 ---
 
-### Phase 1: libc (`gord-libc`)
+### Phase 1: TCC Compiler Port
 
-The most important piece. Everything else depends on it, init, ush, the TCC port, and the window manager client library all need a shared C library. This will live in its own repo (`gord-libc`) and produce a `libc.a` static library that all user programs link against.
+The most impactful thing GordOS can gain right now is a C compiler running inside the system itself. TCC (Tiny C Compiler) is the most realistic candidate - it is small, portable, and has minimal dependencies.
 
-**1.1 Syscall wrappers**
-A single `syscall.h` with all `SYS_*` constants shared between the kernel and userland. One wrapper function per syscall (`write()`, `read()`, `fork()`, `exec()`, `exit()`, `open()`, `close()`, `read_fd()`, `write_fd()`, `dup2()`, `pipe()`, `wait()`, `waitpid()`, `getpid()`, `sleep()`, `chdir()`, `getcwd()`, `mkdir()`, `rmfile()`, `rename()`, `listdir()`, `uptime()`, `meminfo()`, `kill_pid()`, `ps()`, `setcolor()`, `findprefix()`, `readraw()`, `gettime()`, `clear()`) so the `int 0x80` + register-loading pattern exists in exactly one place. If a syscall number ever changes, only one file needs updating. `sys_readfile` and `sys_writefile` wrappers will not be included — fd-based API only.
+**What needs to happen first:**
 
-**1.2 sbrk syscall**
-A new `SYS_SBRK` syscall in the kernel that grows the calling process's heap by mapping new pages into its address space and returning the old heap break. The libc side exposes a `sbrk()` wrapper. This is what backs userland `malloc`.
+**1.1 sbrk syscall**
+A new `SYS_SBRK` syscall that grows the calling process's heap by mapping new physical pages into its address space and returning the old heap break. This is what backs userland `malloc` - without it, TCC cannot allocate memory for its internal data structures.
 
-**1.3 Userland malloc/free**
-A port of the existing `memory/kmalloc.c` coalescing free-list allocator, backed by `sbrk()` instead of `pmm_alloc_page()`. Lives in `gord-libc/src/malloc.c`.
+**1.2 Minimal userland C runtime**
+Right now every program under `user/` hand-rolls its own `int 0x80` stubs. Before TCC-compiled programs can run, there needs to be a minimal shared runtime that provides:
+- A `malloc`/`free` backed by `sbrk`, ported from the existing `memory/kmalloc.c` coalescing free-list allocator
+- Basic string functions - `memcpy`, `memset`, `strcmp`, `strcpy` and friends. `strlen` already exists in `lib/string.c`
+- Minimal stdio - `printf` and `fopen`/`fclose`/`fread`/`fwrite` backed by the existing fd syscalls
+- A `crt0.s` startup stub that sets up `argc`/`argv` and calls `main()`
 
-**1.4 String functions**
-`memcpy`, `memset`, `memmove`, `strcmp`, `strcpy`, `strncpy`, `strncmp`, `strchr`, `strrchr`. Based on the existing `lib/string.c` with care taken that nothing assumes kernel privilege.
+This does not need to be a full Unix libc - just enough for TCC to run.
 
-**1.5 Minimal stdio**
-`printf` and `fprintf` backed by the `write()` syscall wrapper. `fopen`/`fclose`/`fread`/`fwrite` backed by fd syscalls. This is needed for the TCC port.
+**1.3 Port TCC**
+- Get TCC source
+- Patch out anything it needs that GordOS doesn't have yet
+- Compile TCC as a GordOS ELF using the cross compiler on Linux
+- Copy it onto the FAT32 disk and run it inside GordOS
+- Test by compiling a hello world C program from inside GordOS
 
-**1.6 crt0**
-A small `crt0.s` assembly stub that receives control from the kernel, sets up `argc`/`argv`, calls `main()`, then calls `exit()` with the return value. This replaces the hand-rolled entry points currently in each user program.
-
-**1.7 Build system**
-Makefile produces `libc.a` and installs headers to `include/`. All user programs link against `libc.a` instead of rolling their own stubs. Install target uses `GORD_DISK ?= ../disk.img` so it works out of the box with the recommended folder layout.
-
----
-
-### Phase 2: Kernel Cleanup
-
-Work that happens inside the GordOS kernel repo alongside or after Phase 1.
-
-**2.1 Single shared syscall header**
-Move `SYS_*` constants out of `kernel/syscall.h` into a header shared with gord-libc. Remove duplicate definitions from all user programs.
-
-**2.2 Remove whole-file syscalls**
-Migrate any remaining callers of `sys_readfile`/`sys_writefile` in the kernel shell to fd-based equivalents, then remove `SYS_READFILE` and `SYS_WRITEFILE` from `kernel/syscall.c` and the syscall table entirely.
-
-**2.3 Add sbrk syscall**
-`sys_sbrk(size)` extends the calling process's heap by `size` bytes using `paging_map_page_in`. Returns the old heap break (standard Unix `sbrk` contract).
-
-**2.4 Kernel shell becomes debug-only**
-Gate `kernel/shell.c` behind a compile-time flag (`#ifdef GORD_DEBUG_SHELL`). Normal builds exec PID 1 unconditionally with no fallback.
+**Milestone:** `exec TCC.ELF hello.c -o hello.elf` works inside GordOS and produces a runnable ELF.
 
 ---
 
-### Phase 3: Init Program (`gord-init`)
+### Phase 2: Packages
 
-A minimal PID 1 init program in its own repo. The kernel will exec `/bin/init.elf` unconditionally at boot.
+Once TCC works, GordOS becomes a platform people can write software for without needing a Linux cross-compiler. Packages are distributed as source - people copy the source onto the GordOS disk, compile with TCC, and run the result.
 
-**3.1 What init does**
-- Forks and execs `ush` as the shell
-- Loops forever calling `wait()` to reap any orphaned children. This is critical, any process that exits and whose parent is dead gets reparented to PID 1, so init must always be waiting or the process table fills up with zombies
-- If the shell exits unexpectedly, restarts it rather than panicking
+Each package lives in its own repository. The convention is simple:
+- Clone or copy the package source onto your GordOS disk
+- Run `TCC.ELF program.c -o PROGRAM.ELF` inside GordOS
+- Run it with `exec PROGRAM.ELF`
 
-**3.2 Filesystem convention**
-Establish `/bin/` as the standard location for essential binaries. `init.elf` at `/bin/init.elf`, `ush.elf` at `/bin/ush.elf`.
+There is no package manager yet. Discovery happens through a central index repository that lists known packages with their source URLs. Installing a package is a manual process of getting the source onto the disk and compiling it.
 
-**3.3 Kernel side**
-`kernel/kernel.c` execs `/bin/init.elf` as PID 1 unconditionally in release builds. The kernel debug shell is only available when compiled with `GORD_DEBUG_SHELL`.
-
----
-
-### Phase 4: Port Existing User Programs
-
-Move everything out of `user/` in the kernel repo into their own repos, rewritten to use gord-libc.
-
-**4.1 `gord-ush`**
-Move `user/ush.c` into its own repo. Rewrite to use libc wrappers instead of hand-rolled syscall stubs. Links against `gord-libc`.
-
-**4.2 Sample programs**
-Each sample program (`hello`, `echo`, `files`, `counter`, `forktest`, `fdcat`, `redir`, `cat2`) moves to a `gord-utils` repo. All rewritten to use libc.
-
-**4.3 fasterfetch and peter**
-These stay as kernel syscalls for now. Once framebuffer support exists in Phase 7, they will be rewritten as ordinary user programs and removed from the kernel.
+**What makes a good GordOS package:**
+- A single or small number of C source files
+- Uses only the GordOS syscall interface and the minimal runtime from Phase 1
+- Ships with a simple build instruction in its README
 
 ---
 
-### Phase 5: Build System and The Rename
+### Phase 3: Window Manager
 
-**5.1 Update `.gitignore`**
-Add `gord-libc/`, `gord-init/`, `gord-ush/`, `gord-utils/` etc. so the kernel repo does not try to track package folders.
+The window manager is a long term goal. It will be an optional package - users who want a GUI can install it, users who don't are unaffected. The steps below are listed for reference but this work will not begin until Phase 1 and 2 are in a state I am happy with.
 
-**5.2 Update Makefile**
-Remove user program build targets from the kernel Makefile. `make disk` creates and formats the image only. Package installation is handled per-package via their own `make install`.
+**3.1 Linear Framebuffer via Multiboot**
+Add `MULTIBOOT_FLAG_VIDEO` to `boot.s` with `mode_type=0, width=1024, height=768, depth=32`. Extend `multiboot_info_t` with the VBE/framebuffer fields (drivers/config, bootloader-name/APM fields must be included as padding to keep the struct layout correct). Map the physical framebuffer address into kernel address space using the existing paging code. Run a solid colour fill test in QEMU with `-vga std` before touching real hardware.
 
-**5.3 Create the package index**
-A `gord-packages` repo containing nothing but an index listing all known packages, their repo URLs and dependencies. No code, just a registry so users can discover what exists.
+Once this exists, `sys_fasterfetch` and `sys_peter` can be rewritten as ordinary user programs that write directly to the framebuffer, removing two ring-0-only syscalls from the kernel.
 
-**5.4 The rename**
-- Rename the GitHub repo from `GordOS` to `Gord`
-- The kernel binary becomes `Gord`
-- The combined bootable system retains the name `GordOS`
-- Update README, Makefile and grub.cfg accordingly
-
----
-
-### Phase 6: TCC Compiler Port
-
-The goal is to run a C compiler inside GordOS itself. TCC (Tiny C Compiler) is the most realistic candidate given its small size and portability. This phase cannot start until Phase 1 is solid, since TCC needs malloc, file I/O and string functions.
-
-**What TCC needs from GordOS:**
-- `malloc`/`free` — covered by Phase 1
-- `fopen`/`fclose`/`fread`/`fwrite` — covered by Phase 1 stdio
-- `string.h` subset — covered by Phase 1
-- `sbrk` — covered by Phase 2
-- A minimal include directory on the FAT32 disk (`stdint.h`, `stddef.h`, libc headers)
-
-**Milestone:** compile a hello world C program from inside GordOS itself. Once this works, new GordOS programs can be written and compiled on the system without needing the cross-compiler on a Linux host.
-
----
-
-### Phase 7: Window Manager
-
-The window manager is an optional package. Users who want a GUI can install it, users who don't are unaffected. It will live in its own `gord-wm` repo.
-
-**7.1 Prerequisite: Linear Framebuffer via Multiboot**
-Add `MULTIBOOT_FLAG_VIDEO` to `boot.s` with `mode_type=0, width=1024, height=768, depth=32`. Extend `multiboot_info_t` in `multiboot.h` with the VBE/framebuffer fields (drivers/config, bootloader-name/APM fields must be included as padding to keep the struct layout correct even though we don't use them). Map the physical framebuffer address into kernel address space using the existing paging code. Run a solid colour fill test in QEMU with `-vga std` before touching real hardware.
-
-**7.2 PS/2 Mouse Driver**
+**3.2 PS/2 Mouse Driver**
 There is a PS/2 keyboard on IRQ1 in `keyboard.c`. The PS/2 mouse lives on IRQ12, the second PS/2 port. IRQ12 is structurally identical to `keyboard.c`'s pattern (`irq_register`, read `inb(0x60)`, maintain state across interrupts) but with 8042 controller setup first:
-- `outb(0x64, 0xA8)` — enables the auxiliary device (the mouse)
-- `outb(0x64, 0xD4)` — before each byte sent to the mouse, routes it to the aux port instead of the keyboard
-- Send `0xF6` (set defaults) then `0xF4` (enable data reporting) to the mouse itself
-- IRQ12 handler accumulates a 3-byte packet: byte 0 = button/sign flags, byte 1 = signed X delta, byte 2 = signed Y delta. Scroll wheel support (4th byte) can come later.
+- `outb(0x64, 0xA8)` - enables the auxiliary device (the mouse)
+- `outb(0x64, 0xD4)` - routes bytes to the aux port instead of the keyboard
+- Send `0xF6` (set defaults) then `0xF4` (enable data reporting) to the mouse
+- IRQ12 handler accumulates a 3-byte packet: byte 0 = button/sign flags, byte 1 = signed X delta, byte 2 = signed Y delta. Scroll wheel support can come later.
 
-**7.3 Shared Memory Syscalls**
-Pipes are wrong for window contents — copying a full frame through a byte-stream syscall every redraw is both slow and semantically mismatched. Two new syscalls are needed:
-- `sys_shm_create(size)` — allocates physical pages via `pmm_alloc_page`, returns an opaque handle
-- `sys_shm_map(handle)` — maps those physical pages into the calling process's page directory at a free virtual address, returns the address to the caller
+**3.3 Shared Memory Syscalls**
+Pipes are wrong for window contents - copying a full frame through a byte-stream every redraw is both slow and semantically mismatched. Two new syscalls are needed:
+- `sys_shm_create(size)` - allocates physical pages, returns an opaque handle
+- `sys_shm_map(handle)` - maps those pages into the calling process's page directory at a free virtual address, returns the address
 
-This is a direct extension of what already exists: `fork()`'s eager address-space copy and `exec()`'s `PT_LOAD` mapping already insert page-table entries into a process's directory.
+**3.4 Compositor Architecture**
+One privileged compositor process owns the real framebuffer. Every client renders into its own shared memory backing buffer. The compositor puts them together. Not every process draws straight to the framebuffer - that has no answer for overlapping windows or clipping.
 
-**7.4 Compositor Architecture**
-One privileged compositor process owns the real framebuffer. Every client renders into its own shared memory backing buffer. The compositor puts them together. Not every process draws straight to the LFB — that has no answer for overlapping windows or clipping.
+- Client requests a window, gets back a shm handle sized to its dimensions, maps it, draws into it with plain memory writes
+- Client notifies the compositor of changes via a pipe write of a small fixed struct (window id + optional damage rect)
+- Compositor, once per PIT tick, blits each window's shm buffer into the real framebuffer back to front
+- Mouse and keyboard IRQ handlers feed the compositor
 
-- Client requests a window: gets back a shm handle sized to its window dimensions, maps it, draws into it with plain memory writes
-- Client notifies the compositor of changes via a pipe write of a small fixed struct (window id + optional damage rect), control message not pixel data, so pipe overhead is irrelevant
-- Compositor, once per PIT tick, blits each window's shm buffer into the real LFB back to front
-- Mouse/keyboard IRQ handlers feed the compositor
-
-**Suggested order within Phase 7:**
+**Suggested order within Phase 3:**
 1. LFB via multiboot. Solid fill, then gradient, running purely in the kernel.
 2. Mouse driver and cursor sprite tracking movement, purely in the kernel.
 3. Shared memory syscalls and a two-process read/write test.
-4. Minimal compositor — one hardcoded window, one client writing a static pattern into shm, compositor blits it to the LFB every tick.
-5. Multiple windows, z-order list, overlap clicking, click-to-focus hit testing.
-6. Window decorations — title bar, drag to move.
-7. Event routing — keyboard forwarded to focused client, proper per-window event queues.
-8. Client-side library wrapping the IPC protocol, shipped as part of `gord-wm`.
+4. Minimal compositor - one hardcoded window, one client writing a static pattern into shm.
+5. Multiple windows, z-order, overlap and click-to-focus hit testing.
+6. Window decorations - title bar, drag to move.
+7. Event routing - keyboard forwarded to focused client, per-window event queues.
+8. Client-side library wrapping the IPC protocol, distributed as a package.
 
 *Each step should produce something visible in QEMU before moving to the next.*
 
@@ -307,18 +230,18 @@ One privileged compositor process owns the real framebuffer. Every client render
 
 ## Technical Specifications
 
-This part lists out all the technical specifications of GordOS, Please read through the build requirements for the [OSDev cross-compiler guide](https://wiki.osdev.org/GCC_Cross-Compiler)
+This part lists out all the technical specifications of GordOS. Please read through the build requirements and the [OSDev cross-compiler guide](https://wiki.osdev.org/GCC_Cross-Compiler) before attempting to build.
 
 ### Build Requirements
 
-| Item         | Detail                                                                                   |
-| :----------- | :--------------------------------------------------------------------------------------- |
-| Architecture | i686 (32-bit)                                                                            |
-| Compiler     | `i686-elf-gcc` ([OSDev cross-compiler guide](https://wiki.osdev.org/GCC_Cross-Compiler)) |
-| Assembler    | `i686-elf-as` (covered in the same guide)                                                |
-| Optimization | `-O2`                                                                                    |
-| ISO tool     | `xorriso`                                                                                |
-| Disk tool    | `mtools`                                                                                 |
+| Item | Detail |
+| :--- | :--- |
+| Architecture | i686 (32-bit) |
+| Compiler | `i686-elf-gcc` ([OSDev cross-compiler guide](https://wiki.osdev.org/GCC_Cross-Compiler)) |
+| Assembler | `i686-elf-as` (covered in the same guide) |
+| Optimization | `-O2` |
+| ISO tool | `xorriso` |
+| Disk tool | `mtools` |
 
 ---
 
@@ -399,13 +322,13 @@ This part is a guide to help you build and run GordOS for yourself.
 
 *This guide assumes you are on Linux. Before you continue, it is ABSOLUTELY necessary to be comfortable with the terminal and have a basic understanding of building packages from source code. If you are not comfortable with any of those things, then this is not for you.*
 
-Before we begin compiling GordOS, we need to build the Cross Compiler as this is an x86 system. You will not be able to do this without a cross compiler.
+Before compiling GordOS, we need to build the cross compiler as this is an x86 system. You will not be able to do this without a cross compiler.
 
 ---
 
 ### Install The Dependencies
 
-Before we begin building the cross compiler, there are some tools you will need for GordOS to compile properly.
+Before building the cross compiler, there are some tools you will need for GordOS to compile properly.
 
 | Tool | What is it for? | Installing it |
 | :--- | :--- | :--- |
@@ -419,6 +342,8 @@ Before we begin building the cross compiler, there are some tools you will need 
 
 Test to make sure they installed correctly before moving on.
 
+---
+
 ### Clone The Repository
 
 Make a folder on your system for GordOS, cd into that directory, then clone the repo:
@@ -429,6 +354,8 @@ cd GordOS
 ```
 
 Make sure you can still see all the correct files and nothing is corrupt.
+
+---
 
 ### Set Up The Cross-Compiler
 
@@ -452,9 +379,11 @@ $HOME/opt/cross/bin/$TARGET-gcc --version
 
 To use Visual Studio Code with GordOS, you can follow the [Visual Studio Code](Visual%20Studio%20Code.md) guide.
 
+---
+
 ### Build And Run
 
-After all tests complete, it is now time to actually compile and run GordOS. This is actually all quite simple due to the makefile.
+After all tests complete, it is now time to actually compile and run GordOS. This is all quite simple due to the Makefile.
 
 ```bash
 make        # Compile and link the kernel
