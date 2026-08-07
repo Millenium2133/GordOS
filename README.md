@@ -133,7 +133,7 @@ Development status of GordOS is currently ongoing. Updates will mainly be coming
 
 ### The Plan
 
-The long term goal for GordOS is a clean Unix-style separation between the kernel and userland. The kernel should do the absolute minimum — CPU initialisation, memory detection, core hardware drivers, process management and syscalls — then hand off to userspace as fast as possible. Everything else lives in userspace.
+The long term goal for GordOS is a clean Unix-style separation between the kernel and userland. The kernel should do the absolute minimum, CPU initialisation, memory detection, core hardware drivers, process management and syscalls, then hand off to userspace as fast as possible. Everything else lives in userspace.
 
 When this split is complete, GordOS will be renamed. The kernel will become **Gord**, and the userland packages will live in separate repos under a **gord-packages** umbrella. Each package will be its own repo so people who only want one package don't have to clone all of them. Packages will be cloned inside the Gord kernel folder:
 
@@ -153,7 +153,7 @@ The steps to get there, in order:
 
 ### Phase 1: libc (`gord-libc`)
 
-The most important piece. Everything else depends on it — init, ush, the TCC port, and the window manager client library all need a shared C library. This will live in its own repo (`gord-libc`) and produce a `libc.a` static library that all user programs link against.
+The most important piece. Everything else depends on it, init, ush, the TCC port, and the window manager client library all need a shared C library. This will live in its own repo (`gord-libc`) and produce a `libc.a` static library that all user programs link against.
 
 **1.1 Syscall wrappers**
 A single `syscall.h` with all `SYS_*` constants shared between the kernel and userland. One wrapper function per syscall (`write()`, `read()`, `fork()`, `exec()`, `exit()`, `open()`, `close()`, `read_fd()`, `write_fd()`, `dup2()`, `pipe()`, `wait()`, `waitpid()`, `getpid()`, `sleep()`, `chdir()`, `getcwd()`, `mkdir()`, `rmfile()`, `rename()`, `listdir()`, `uptime()`, `meminfo()`, `kill_pid()`, `ps()`, `setcolor()`, `findprefix()`, `readraw()`, `gettime()`, `clear()`) so the `int 0x80` + register-loading pattern exists in exactly one place. If a syscall number ever changes, only one file needs updating. `sys_readfile` and `sys_writefile` wrappers will not be included — fd-based API only.
@@ -202,7 +202,7 @@ A minimal PID 1 init program in its own repo. The kernel will exec `/bin/init.el
 
 **3.1 What init does**
 - Forks and execs `ush` as the shell
-- Loops forever calling `wait()` to reap any orphaned children — this is critical, any process that exits and whose parent is dead gets reparented to PID 1, so init must always be waiting or the process table fills up with zombies
+- Loops forever calling `wait()` to reap any orphaned children. This is critical, any process that exits and whose parent is dead gets reparented to PID 1, so init must always be waiting or the process table fills up with zombies
 - If the shell exits unexpectedly, restarts it rather than panicking
 
 **3.2 Filesystem convention**
@@ -287,7 +287,7 @@ This is a direct extension of what already exists: `fork()`'s eager address-spac
 One privileged compositor process owns the real framebuffer. Every client renders into its own shared memory backing buffer. The compositor puts them together. Not every process draws straight to the LFB — that has no answer for overlapping windows or clipping.
 
 - Client requests a window: gets back a shm handle sized to its window dimensions, maps it, draws into it with plain memory writes
-- Client notifies the compositor of changes via a pipe write of a small fixed struct (window id + optional damage rect) — control message not pixel data, so pipe overhead is irrelevant
+- Client notifies the compositor of changes via a pipe write of a small fixed struct (window id + optional damage rect), control message not pixel data, so pipe overhead is irrelevant
 - Compositor, once per PIT tick, blits each window's shm buffer into the real LFB back to front
 - Mouse/keyboard IRQ handlers feed the compositor
 
