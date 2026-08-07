@@ -143,7 +143,7 @@ The goal for GordOS is to become a self-hosting system - one where programs can 
 
 Everything in Phase 2 (TCC) depends on this. None of it is glamorous but all of it is necessary.
 
-**1.1 sbrk syscall**
+**1.1 sbrk syscall (Done)**
 A new `SYS_SBRK` syscall in `kernel/syscall.c` that grows the calling process's heap by mapping new physical pages into its address space via `paging_map_page_in`, then returns the old heap break. This is the standard Unix `sbrk` contract. Without it there is no userland `malloc`, and without `malloc` TCC cannot run.
 
 **1.2 Userland malloc/free**
