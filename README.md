@@ -11,9 +11,10 @@ GordOS is a hobbyist operating system built from scratch in C and x86 Assembly. 
 2. [Current Shell Commands](#Current-Shell-Commands)
    1. [Built-In User Programs](#Built-In-User-Programs)
 3. [Development Status](#Development-Status)
-   1. [Phase 1: TCC Compiler Port](#Phase-1-TCC-Compiler-Port)
-   2. [Phase 2: Packages](#Phase-2-Packages)
-   3. [Phase 3: Window Manager](#Phase-3-Window-Manager)
+   1. [Phase 1: Groundwork](#Phase-1-Groundwork)
+   2. [Phase 2: TCC Compiler Port](#Phase-2-TCC-Compiler-Port)
+   3. [Phase 3: Packages](#Phase-3-Packages)
+   4. [Phase 4: Window Manager](#Phase-4-Window-Manager)
 4. [Technical Specifications](#Technical-Specifications)
    1. [Build Requirements](#Build-Requirements)
    2. [Hardware Requirements](#Hardware-Requirements)
@@ -173,7 +174,7 @@ With Phase 1 done, TCC has everything it needs. TCC (Tiny C Compiler) is the mos
 
 ---
 
-### Phase 2: Packages
+### Phase 3: Packages
 
 Once TCC works, GordOS becomes a platform people can write software for without needing a Linux cross-compiler. Packages are distributed as source - people copy the source onto the GordOS disk, compile with TCC, and run the result.
 
@@ -191,28 +192,28 @@ There is no package manager yet. Discovery happens through a central index repos
 
 ---
 
-### Phase 3: Window Manager
+### Phase 4: Window Manager
 
 The window manager is a long term goal. It will be an optional package - users who want a GUI can install it, users who don't are unaffected. The steps below are listed for reference but this work will not begin until Phase 1 and 2 are in a state I am happy with.
 
-**3.1 Linear Framebuffer via Multiboot**
+**4.1 Linear Framebuffer via Multiboot**
 Add `MULTIBOOT_FLAG_VIDEO` to `boot.s` with `mode_type=0, width=1024, height=768, depth=32`. Extend `multiboot_info_t` with the VBE/framebuffer fields (drivers/config, bootloader-name/APM fields must be included as padding to keep the struct layout correct). Map the physical framebuffer address into kernel address space using the existing paging code. Run a solid colour fill test in QEMU with `-vga std` before touching real hardware.
 
 Once this exists, `sys_fasterfetch` and `sys_peter` can be rewritten as ordinary user programs that write directly to the framebuffer, removing two ring-0-only syscalls from the kernel.
 
-**3.2 PS/2 Mouse Driver**
+**4.2 PS/2 Mouse Driver**
 There is a PS/2 keyboard on IRQ1 in `keyboard.c`. The PS/2 mouse lives on IRQ12, the second PS/2 port. IRQ12 is structurally identical to `keyboard.c`'s pattern (`irq_register`, read `inb(0x60)`, maintain state across interrupts) but with 8042 controller setup first:
 - `outb(0x64, 0xA8)` - enables the auxiliary device (the mouse)
 - `outb(0x64, 0xD4)` - routes bytes to the aux port instead of the keyboard
 - Send `0xF6` (set defaults) then `0xF4` (enable data reporting) to the mouse
 - IRQ12 handler accumulates a 3-byte packet: byte 0 = button/sign flags, byte 1 = signed X delta, byte 2 = signed Y delta. Scroll wheel support can come later.
 
-**3.3 Shared Memory Syscalls**
+**4.3 Shared Memory Syscalls**
 Pipes are wrong for window contents - copying a full frame through a byte-stream every redraw is both slow and semantically mismatched. Two new syscalls are needed:
 - `sys_shm_create(size)` - allocates physical pages, returns an opaque handle
 - `sys_shm_map(handle)` - maps those pages into the calling process's page directory at a free virtual address, returns the address
 
-**3.4 Compositor Architecture**
+**4.4 Compositor Architecture**
 One privileged compositor process owns the real framebuffer. Every client renders into its own shared memory backing buffer. The compositor puts them together. Not every process draws straight to the framebuffer - that has no answer for overlapping windows or clipping.
 
 - Client requests a window, gets back a shm handle sized to its dimensions, maps it, draws into it with plain memory writes
@@ -220,7 +221,7 @@ One privileged compositor process owns the real framebuffer. Every client render
 - Compositor, once per PIT tick, blits each window's shm buffer into the real framebuffer back to front
 - Mouse and keyboard IRQ handlers feed the compositor
 
-**Suggested order within Phase 3:**
+**Suggested order within Phase 4:**
 1. LFB via multiboot. Solid fill, then gradient, running purely in the kernel.
 2. Mouse driver and cursor sprite tracking movement, purely in the kernel.
 3. Shared memory syscalls and a two-process read/write test.
