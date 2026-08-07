@@ -149,7 +149,7 @@ A new `SYS_SBRK` syscall in `kernel/syscall.c` that grows the calling process's 
 **1.2 Userland malloc/free (Done)**
 Port the existing `memory/kmalloc.c` coalescing free-list allocator into a userland library, backed by `sbrk` instead of `pmm_alloc_page`. Test it standalone with an existing user program before moving on. This is the highest risk step - get it right here and everything after it is easier.
 
-**1.3 crt0**
+**1.3 crt0 (Done)**
 A small `crt0.s` assembly stub that the linker places before `main()`. It receives control from the kernel, sets up `argc`/`argv`, calls `main()`, then calls `exit()` with the return value. Right now every user program has its own hand-rolled `_start` - crt0 standardises that and is required before TCC-compiled programs can run.
 
 **1.4 String functions**
