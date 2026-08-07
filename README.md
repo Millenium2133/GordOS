@@ -152,7 +152,7 @@ Port the existing `memory/kmalloc.c` coalescing free-list allocator into a userl
 **1.3 crt0 (Done)**
 A small `crt0.s` assembly stub that the linker places before `main()`. It receives control from the kernel, sets up `argc`/`argv`, calls `main()`, then calls `exit()` with the return value. Right now every user program has its own hand-rolled `_start` - crt0 standardises that and is required before TCC-compiled programs can run.
 
-**1.4 String functions**
+**1.4 String functions (Done)**
 `memcpy`, `memset`, `memmove`, `strcmp`, `strcpy`, `strncpy`, `strchr`, `strrchr`. The kernel already has some of these in `lib/string.c` - the userland versions just need to not assume kernel privilege. TCC uses these internally.
 
 **1.5 Minimal stdio**
