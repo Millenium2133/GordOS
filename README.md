@@ -134,31 +134,37 @@ You can run these programs by using the `exec` command, or by typing their name 
 
 Development of GordOS is currently ongoing. Updates will mainly be coming in fortnightly. Bug fixes may come in sooner.
 
-The goal for GordOS is to become a self-hosting system - one where programs can be written and compiled inside GordOS itself rather than requiring a Linux host. The window manager is still the long term GUI goal. The steps to get there:
+The goal for GordOS is to become a self-hosting system - one where programs can be written and compiled inside GordOS itself rather than requiring a Linux host. The window manager is still the long term GUI goal. The steps to get there, in order:
 
 ---
 
-### Phase 1: TCC Compiler Port
+### Phase 1: Groundwork
 
-The most impactful thing GordOS can gain right now is a C compiler running inside the system itself. TCC (Tiny C Compiler) is the most realistic candidate - it is small, portable, and has minimal dependencies.
-
-**What needs to happen first:**
+Everything in Phase 2 (TCC) depends on this. None of it is glamorous but all of it is necessary.
 
 **1.1 sbrk syscall**
-A new `SYS_SBRK` syscall that grows the calling process's heap by mapping new physical pages into its address space and returning the old heap break. This is what backs userland `malloc` - without it, TCC cannot allocate memory for its internal data structures.
+A new `SYS_SBRK` syscall in `kernel/syscall.c` that grows the calling process's heap by mapping new physical pages into its address space via `paging_map_page_in`, then returns the old heap break. This is the standard Unix `sbrk` contract. Without it there is no userland `malloc`, and without `malloc` TCC cannot run.
 
-**1.2 Minimal userland C runtime**
-Right now every program under `user/` hand-rolls its own `int 0x80` stubs. Before TCC-compiled programs can run, there needs to be a minimal shared runtime that provides:
-- A `malloc`/`free` backed by `sbrk`, ported from the existing `memory/kmalloc.c` coalescing free-list allocator
-- Basic string functions - `memcpy`, `memset`, `strcmp`, `strcpy` and friends. `strlen` already exists in `lib/string.c`
-- Minimal stdio - `printf` and `fopen`/`fclose`/`fread`/`fwrite` backed by the existing fd syscalls
-- A `crt0.s` startup stub that sets up `argc`/`argv` and calls `main()`
+**1.2 Userland malloc/free**
+Port the existing `memory/kmalloc.c` coalescing free-list allocator into a userland library, backed by `sbrk` instead of `pmm_alloc_page`. Test it standalone with an existing user program before moving on. This is the highest risk step - get it right here and everything after it is easier.
 
-This does not need to be a full Unix libc - just enough for TCC to run.
+**1.3 crt0**
+A small `crt0.s` assembly stub that the linker places before `main()`. It receives control from the kernel, sets up `argc`/`argv`, calls `main()`, then calls `exit()` with the return value. Right now every user program has its own hand-rolled `_start` - crt0 standardises that and is required before TCC-compiled programs can run.
 
-**1.3 Port TCC**
+**1.4 String functions**
+`memcpy`, `memset`, `memmove`, `strcmp`, `strcpy`, `strncpy`, `strchr`, `strrchr`. The kernel already has some of these in `lib/string.c` - the userland versions just need to not assume kernel privilege. TCC uses these internally.
+
+**1.5 Minimal stdio**
+`printf` backed by `sys_write`. `fopen`/`fclose`/`fread`/`fwrite` backed by the existing fd syscalls (`sys_open`, `sys_read_fd`, `sys_write_fd`, `sys_close`). TCC uses stdio to read source files and write output - without this it cannot compile anything.
+
+---
+
+### Phase 2: TCC Compiler Port
+
+With Phase 1 done, TCC has everything it needs. TCC (Tiny C Compiler) is the most realistic compiler candidate - it is small, portable, and has minimal dependencies compared to GCC or Clang.
+
 - Get TCC source
-- Patch out anything it needs that GordOS doesn't have yet
+- Patch out anything it needs that GordOS still cannot provide
 - Compile TCC as a GordOS ELF using the cross compiler on Linux
 - Copy it onto the FAT32 disk and run it inside GordOS
 - Test by compiling a hello world C program from inside GordOS
