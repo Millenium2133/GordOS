@@ -146,7 +146,7 @@ Everything in Phase 2 (TCC) depends on this. None of it is glamorous but all of 
 **1.1 sbrk syscall (Done)**
 A new `SYS_SBRK` syscall in `kernel/syscall.c` that grows the calling process's heap by mapping new physical pages into its address space via `paging_map_page_in`, then returns the old heap break. This is the standard Unix `sbrk` contract. Without it there is no userland `malloc`, and without `malloc` TCC cannot run.
 
-**1.2 Userland malloc/free**
+**1.2 Userland malloc/free (Done)**
 Port the existing `memory/kmalloc.c` coalescing free-list allocator into a userland library, backed by `sbrk` instead of `pmm_alloc_page`. Test it standalone with an existing user program before moving on. This is the highest risk step - get it right here and everything after it is easier.
 
 **1.3 crt0**
