@@ -38,6 +38,10 @@ uint32_t elf_load(process_t* proc, void* elf_data, uint32_t elf_size)
         if (phdr->memsz == 0)
             continue;
 
+        uint32_t segment_end = phdr->vaddr + phdr->memsz;
+        if (segment_end > highest_end)
+            highest_end = segment_end;
+
         // Calculate how many pages this segment needs
         uint32_t pages_needed = (phdr->memsz + 0xFFF) / 0x1000;
         uint32_t vaddr = phdr->vaddr & ~0xFFF;  // align down to page boundary
