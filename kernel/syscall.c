@@ -9,6 +9,7 @@
 #include "vfs.h"
 #include "pmm.h"
 #include "kmalloc.h"
+#include "paging.h"
 #include "wbuf.h"
 #include "pipe.h"
 
@@ -851,6 +852,64 @@ static int sys_gettime(uint32_t* ubuf)
     return 0;
 }
 
+// sys_sbrk: standard Unix sbrk contract. returns the *old* break on success
+// (the newly-useable region starts there), or -1 on failure. Increment == 0
+// just queries the current break without changing it.
+//
+// heap_end is always kept page-aligned, so growth maps whole pages.
+// stating exactly at the old break; a caller asking for fewer bytes than a
+// full page simply gets a little more than it asked for, which is harmless for a malloc built on top of this.
+static int sys_sbrk(int increment)
+{
+    process_t* proc = current_process;
+    if (!proc || proc->heap_end == 0)
+        return -1;
+
+    uint32_t old_break = proc->heap_end;
+
+    if (increment == 0)
+        return (int)old_break;
+
+    if (increment < 0)
+    {
+        // Shrinking: pages already mapped are left in place (reclaimed on
+        // process exit/destroy like the rest of the address space). we just 
+        // refuse to move the break back below the heap_start.
+        uint32_t shrink = (uint32_t)(-increment);
+        if (shrink > old_break - proc->heap_start)
+            return -1;
+        proc->heap_end = old_break - shrink;
+        return (int)old_break;
+
+    }
+
+    uint32_t pages_needed = ((uint32_t)increment + 0xFFF) / 0x1000;
+    uint32_t new_break = old_break + pages_needed * 0x1000;
+
+    // Keep the heap from ever growing into the user stack page.
+    if (new_break < old_break || new_break >= USER_STACK_PAGE - 0x1000)
+        return -1;
+
+
+    uint32_t page;
+    for (page = 0; page < pages_needed; page++)
+    {
+        void* phys = pmm_alloc_page();
+        if (!phys)
+            return -1; // out of memory; nothing commited for this page
+
+        uint32_t virt = old_break + page * 0x1000;
+        if (paging_map_page_in(proc->page_directory, virt, (uint32_t)phys, PAGE_PRESENT | PAGE_WRITEABLE | PAGE_USER) != 0)
+        {
+            pmm_free_page(phys);
+            return -1;
+        }
+    }
+
+    proc->heap_end = new_break;
+    return (int)old_break;
+}
+
 void syscall_handler(struct registers* regs)
 {
     int ret = 0;
@@ -969,6 +1028,10 @@ void syscall_handler(struct registers* regs)
             break;
         case SYS_CLEAR:
             ret = sys_clear();
+            break;
+        case SYS_SBRK:
+            // ebx = increment (signed), 0 to just query the current break.
+            ret = sys_sbrk((int)regs->ebx);
             break;
         default:
             // Unknown syscall

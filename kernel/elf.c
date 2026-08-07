@@ -27,6 +27,7 @@ uint32_t elf_load(process_t* proc, void* elf_data, uint32_t elf_size)
 
     // Walk program headers and load PT_LOAD segments
     uint32_t i;
+    uint32_t highest_end = 0; // Highest vaddr + memsz seen, for the heap start
     for (i = 0; i < header->phnum; i++)
     {
         elf_phdr_t* phdr = (elf_phdr_t*)((uint8_t*)elf_data + header->phoff + i * header->phentsize);
@@ -88,6 +89,12 @@ uint32_t elf_load(process_t* proc, void* elf_data, uint32_t elf_size)
             paging_unmap_page(SCRATCH_VIRT);
         }
     }
+
+    // Heap starts right after the last loaded segment, page-aligned up.
+    // sys_sbrk grows it from here.
+    uint32_t heap_start = (highest_end + 0xFFF) & ~0xFFF;
+    proc->heap_start = heap_start;
+    proc->heap_end = heap_start;
 
     return header->entry;
 }

@@ -220,6 +220,8 @@ process_t* process_create(void)
     proc->exit_code    = 0;
     proc->block_reason = BLOCK_NONE;
     proc->wait_target  = 0;
+    proc->heap_start    = 0;
+    proc->heap_end      = 0;
     proc->next         = 0;
 
     fd_init_std(proc->fds);

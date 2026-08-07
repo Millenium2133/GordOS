@@ -83,6 +83,13 @@ typedef struct process
     int      block_reason;  // BLOCK_NONE / BLOCK_WAIT / BLOCK_READ
     uint32_t wait_target;   // for BLOCK_WAIT: child pid, or 0 for "any child"
 
+    // Heap, for sys_sbrk. heap_start is fixed at load time (page-aligned, just 
+    // above the highest ELF PT_LOAD segment); heap_end is the current break
+    // and is always kept page-aligned too, since sbrk maps whole pages to cover
+    // whatever growth it's asked for.
+    uint32_t heap_start;
+    uint32_t heap_end;
+
     // Open files (fd index = slot index)
     file_desc_t fds[MAX_FDS];
 
