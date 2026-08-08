@@ -166,7 +166,7 @@ A small `crt0.s` assembly stub that the linker places before `main()`. It receiv
 
 With Phase 1 done, TCC has everything it needs. TCC (Tiny C Compiler) is the most realistic compiler candidate - it is small, portable, and has minimal dependencies compared to GCC or Clang.
 
-- Get TCC source
+- Get TCC source (Done)
 - Patch out anything it needs that GordOS still cannot provide
 - Compile TCC as a GordOS ELF using the cross compiler on Linux
 - Copy it onto the FAT32 disk and run it inside GordOS
