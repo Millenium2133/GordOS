@@ -27,11 +27,13 @@ GordOS is a hobbyist operating system built from scratch in C and x86 Assembly. 
    4. [Build And Run](#Build-And-Run)
 6. [Known Issues](#Known-Issues)
 7. [Contributing](#Contributing)
+8. [Third-Party Code](#third-party-code)
 
 ## Other Documentation
 * [Local LLM's](Local%20LLM's.md)
 * [Visual Studio Code](Visual%20Studio%20Code.md)
 * [Codebase requirements](Codebase%20requirements.md)
+* [LICENSE](LICENSE)
 
 ---
 
@@ -430,3 +432,10 @@ tools/boot-test.sh
 ## Contributing
 
 If you would like to contribute to GordOS, please read through the [Codebase requirements](Codebase%20requirements.md), [Visual Studio Code](Visual%20Studio%20Code.md) and [Local LLM's](Local%20LLM's.md) pages before getting started. Any help is greatly appreciated.
+
+---
+
+## Third-Party Code
+
+GordOS's compliler (Phase 2) is a port of [TinyCC (TCC)](https://repo.or.cz/tinycc.git), written by Fabrice Bellard and maintained by the TinyCC project.
+The 'tcc/' directory contains a vendored, GordOS-patched subset of TCC's source, targeting i386 ELF output only. TCC's compiler source is licensed LGPL v2.1-or-later; its runtime support library (`libtcc1.a`) is licensed GPL v2-or-later with an explicit linking exception, meaning programs compiled with GordOS's TCC and linked against `libtcc1.a` are not themselves subject to the GPL. See the original project at [github.com/TinyCC/tinycc](https://github.com/TinyCC/tinycc).
