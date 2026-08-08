@@ -10,6 +10,7 @@
 // stdio.c, ctype.c, and setjmp.s for the TCC port (Phase 2).
 
 #include "stdlib.h"
+#include "string.h"
 #include <stdint.h>
 
 #define SYS_SBRK 35
@@ -137,4 +138,61 @@ void free(void* ptr)
         block->size += HEADER_SIZE + block->next->size;
         block->next = block->next->next;
     }
+}
+
+void* realloc(void* ptr, size_t new_size)
+{
+    if (!ptr)
+        return malloc(new_size);
+
+    if (new_size == 0)
+    {
+        free (ptr);
+        return 0;
+    }
+
+    new_size = (new_size + 3) & ~3;
+
+    block_header_t* block = (block_header_t*)((uint8_t*)ptr - HEADER_SIZE);
+
+    // Already big enough, reuse in place. dosent shrink/split the
+    // block if new_size is smaller than whats already allocated;
+    // Thats a possible future optimization, not a correctness issue.
+    if (block->size >= new_size)
+        return ptr;
+
+    // Otherwise: allocate fresh, copy the old data over, free the old
+    // block. always correct. dosent attempt to merge forward into an
+    // adjasent free block in place (which would avoid the copy),
+    // another possible future optimization, not needed for correctness.
+    void* new_ptr = malloc(new_size);
+    if (!new_ptr)
+        return 0;
+
+    size_t copy_size = block->size < new_size ? block->size : new_size;
+    memcpy(new_ptr, ptr, copy_size);
+
+    free(ptr);
+    return new_ptr;
+}
+
+void* calloc(size_t nmemb, size_t size)
+{
+    if (nmemb == 0 || size == 0)
+        return 0;
+
+    // Guard agains nmemb * size overflowing size_t, a classic,
+    // well-known calloc pitfall (a naive 'malloc(nmemb * size)' can
+    // wrap around to a small allocation while the caller thinks it
+    // asked for something huge).
+    size_t  total = nmemb * size;
+    if (total / nmemb != size)
+        return 0;
+
+    void* ptr = malloc(total);
+    if (!ptr)
+        return 0;
+
+    memset(ptr, 0, total);
+    return ptr;
 }
