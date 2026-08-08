@@ -322,6 +322,33 @@ uint32_t paging_build_user_stack(void* stack_phys, uint32_t user_page_base,
         argc++;
     }
 
+    // Guard against overflowing the page: reserve room for the argv
+    // pointer array (argc pointers + a NULL sentinel) and the 4-word
+    // _start entry frame *before* packing any strings, then drop
+    // trailing arguments (never argv[0]) if the strings wouldn't all
+    // fit in what's left. Using the pre-drop argc for the reserved
+    // amount is a deliberately conservative overestimate, safe,
+    // since the actual pointer array only shrinks if we do end up
+    // dropping arguments.
+    uint32_t reserved = 4 * ((uint32_t)argc + 1) + 16;
+    uint32_t string_budget = (reserved < 0x1000) ? (0x1000 - reserved) : 0;
+
+    uint32_t total_len = 0;
+    for (int i = 0; i < argc; i++)
+    {
+        int slen = 0;
+        while (tokens[i][slen]) slen++;
+        slen++; // NUL
+        if (total_len + (uint32_t)slen > string_budget)
+        {
+            // Won't fit, drop this argument and everything after it.
+            // Arguments before this one (including argv[0]) are kept.
+            argc = i;
+            break;
+        }
+        total_len += (uint32_t)slen;
+    }
+
     // Pack argument strings from the top of the page downward (highest
     // index first so argv[0] ends up lowest, but order doesn't matter
     // since we track each string's user-space virtual address).
