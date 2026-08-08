@@ -76,10 +76,10 @@ disk: user
 	mcopy -i disk.img user/redir.elf ::REDIR.ELF
 	mcopy -i disk.img user/ush.elf ::USH.ELF
 	mcopy -i disk.img user/cat2.elf ::CAT2.ELF
-	mcopy -i disk.img user/malloctest.elf ::MALLOCTEST.ELF
-	mcopy -i disk.img user/crt0test.elf ::CRT0TEST.ELF
-	mcopy -i disk.img user/stringtest.elf ::STRINGTEST.ELF
-	mcopy -i disk.img user/stdiotest.elf ::STDIOTEST.ELF
+	mcopy -i disk.img user/tests/malloctest.elf ::MALLOCTEST.ELF
+	mcopy -i disk.img user/tests/crt0test.elf ::CRT0TEST.ELF
+	mcopy -i disk.img user/tests/stringtest.elf ::STRINGTEST.ELF
+	mcopy -i disk.img user/tests/stdiotest.elf ::STDIOTEST.ELF
 
 run: GordOS.iso
 	@test -f disk.img || (echo "ERROR: disk.img not found, run 'make disk' first" && exit 1)
@@ -91,7 +91,7 @@ run: GordOS.iso
 clean:
 	rm -rf *.o GordOS GordOS.iso isodir/ disk.img
 	rm -rf cpu/*.o drivers/*.o display/*.o lib/*.o memory/*.o fs/*.o kernel/*.o
-	rm -rf user/*.elf user/*.o
+	rm -rf user/*.elf user/*.o user/tests/*.elf
 
 .PHONY: clean iso disk run user
 
@@ -238,7 +238,7 @@ kernel/pipe.o: kernel/pipe.c kernel/pipe.h memory/kmalloc.h
 
 user: user/hello.elf user/echo.elf user/files.elf user/crash.elf user/counter.elf \
       user/forktest.elf user/fdcat.elf user/redir.elf user/ush.elf user/cat2.elf \
-	  user/malloctest.elf user/crt0test.elf user/stringtest.elf user/stdiotest.elf
+      user/tests/malloctest.elf user/tests/crt0test.elf user/tests/stringtest.elf user/tests/stdiotest.elf
 
 user/hello.elf: user/hello.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
@@ -280,21 +280,21 @@ user/cat2.elf: user/cat2.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
 	      -T user/linker.ld user/cat2.c -o user/cat2.elf
 
-user/malloctest.elf: user/malloctest.c user/malloc.c user/malloc.h user/linker.ld
-	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
-		  -T user/linker.ld user/malloctest.c user/malloc.c -o user/malloctest.elf
+user/tests/malloctest.elf: user/tests/malloctest.c user/malloc.c user/malloc.h user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib -Iuser \
+	      -T user/linker.ld user/tests/malloctest.c user/malloc.c -o user/tests/malloctest.elf
 
 user/crt0.o: user/crt0.s
 	$(AS) user/crt0.s -o user/crt0.o
 
-user/crt0test.elf: user/crt0test.c user/crt0.o user/linker.ld
+user/tests/crt0test.elf: user/tests/crt0test.c user/crt0.o user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
-		  -T user/linker.ld user/crt0.o user/crt0test.c -o user/crt0test.elf
+	      -T user/linker.ld user/crt0.o user/tests/crt0test.c -o user/tests/crt0test.elf
 
-user/stringtest.elf: user/stringtest.c user/string.c user/string.h user/crt0.o user/linker.ld
-	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
-	      -T user/linker.ld user/crt0.o user/stringtest.c user/string.c -o user/stringtest.elf
+user/tests/stringtest.elf: user/tests/stringtest.c user/string.c user/string.h user/crt0.o user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib -Iuser \
+	      -T user/linker.ld user/crt0.o user/tests/stringtest.c user/string.c -o user/tests/stringtest.elf
 
-user/stdiotest.elf: user/stdiotest.c user/stdio.c user/stdio.h user/string.c user/crt0.o user/linker.ld
-	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
-	      -T user/linker.ld user/crt0.o user/stdiotest.c user/stdio.c user/string.c -o user/stdiotest.elf
+user/tests/stdiotest.elf: user/tests/stdiotest.c user/stdio.c user/stdio.h user/string.c user/crt0.o user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib -Iuser \
+	      -T user/linker.ld user/crt0.o user/tests/stdiotest.c user/stdio.c user/string.c -o user/tests/stdiotest.elf
