@@ -263,6 +263,17 @@ This part lists out all the technical specifications of GordOS. Please read thro
 | Input | PS/2 keyboard (Scan Code Set 1) |
 | Storage | ATA disk (required for filesystem) |
 
+
+> **On real hardware:** the ATA driver only speaks the legacy Primary
+> ATA I/O ports (`0x1F0`-`0x1F7`), with no AHCI support. If you're
+> booting on a SATA-based machine, the storage controller must be set
+> to **IDE / Legacy / Compatibility mode** in BIOS, not AHCI - AHCI
+> mode doesn't route these ports to the drive at all, and looks
+> identical to "no drive detected" from the OS side. The drive should
+> also be on the first SATA port, since that's the one that maps to
+> Primary Master (the only channel/drive combination this driver
+> currently talks to).
+
 ---
 
 ### Memory Layout
