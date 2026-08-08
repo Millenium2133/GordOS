@@ -79,6 +79,7 @@ disk: user
 	mcopy -i disk.img user/malloctest.elf ::MALLOCTEST.ELF
 	mcopy -i disk.img user/crt0test.elf ::CRT0TEST.ELF
 	mcopy -i disk.img user/stringtest.elf ::STRINGTEST.ELF
+	mcopy -i disk.img user/stdiotest.elf ::STDIOTEST.ELF
 
 run: GordOS.iso
 	@test -f disk.img || (echo "ERROR: disk.img not found, run 'make disk' first" && exit 1)
@@ -237,7 +238,7 @@ kernel/pipe.o: kernel/pipe.c kernel/pipe.h memory/kmalloc.h
 
 user: user/hello.elf user/echo.elf user/files.elf user/crash.elf user/counter.elf \
       user/forktest.elf user/fdcat.elf user/redir.elf user/ush.elf user/cat2.elf \
-	  user/malloctest.elf user/crt0test.elf user/stringtest.elf
+	  user/malloctest.elf user/crt0test.elf user/stringtest.elf user/stdiotest.elf
 
 user/hello.elf: user/hello.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
@@ -293,3 +294,7 @@ user/crt0test.elf: user/crt0test.c user/crt0.o user/linker.ld
 user/stringtest.elf: user/stringtest.c user/string.c user/string.h user/crt0.o user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
 	      -T user/linker.ld user/crt0.o user/stringtest.c user/string.c -o user/stringtest.elf
+
+user/stdiotest.elf: user/stdiotest.c user/stdio.c user/stdio.h user/string.c user/crt0.o user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
+	      -T user/linker.ld user/crt0.o user/stdiotest.c user/stdio.c user/string.c -o user/stdiotest.elf
