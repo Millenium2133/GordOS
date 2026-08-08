@@ -1786,6 +1786,11 @@ ST_FUNC void tccelf_add_crtbegin(TCCState *s1)
         tcc_add_crt(s1, "crtbegin_so.o");
     else
         tcc_add_crt(s1, "crtbegin_dynamic.o");
+#elif defined TCC_TARGET_GORDOS
+    /* GordOS: no glibc-style crti.o/crtbegin.o constructor bracketing
+       needed - crt0.o's _start (Phase 1.3) directly unpacks argc/argv
+       and calls main(), no .init_array machinery involved. */
+    tcc_add_crt(s1, "crt0.o");
 #else
     if (s1->output_type != TCC_OUTPUT_DLL)
         tcc_add_crt(s1, "crt1.o");
@@ -1811,11 +1816,12 @@ ST_FUNC void tccelf_add_crtend(TCCState *s1)
         tcc_add_crt(s1, "crtend_so.o");
     else
         tcc_add_crt(s1, "crtend_android.o");
+#elif defined TCC_TARGET_GORDOS
+    /* no crtn.o equivalent needed - see tccelf_add_crtbegin above */
 #else
     tcc_add_crt(s1, "crtn.o");
 #endif
-}
-#endif /* TCC_TARGET_UNIX */
+} /* TCC_TARGET_UNIX */
 
 #ifndef TCC_TARGET_PE
 /* add tcc runtime libraries */
