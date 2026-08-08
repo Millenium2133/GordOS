@@ -15,6 +15,18 @@ static inline void outw(uint16_t port, uint16_t value)
 	asm volatile("outw %0, %1" : : "a"(value), "Nd"(port));
 }
 
+// ~400ns settling delay after a drive-select write, before the status register
+// can be trusted on real hardware. Reading the alternate status port 4 times
+// is the standard trick, each read costs enough I/O bus time to add up to
+// roughly 400ns
+static void ata_400ns_delay(void)
+{
+	inb(0x3F6);
+	inb(0x3F6);
+	inb(0x3F6);
+	inb(0x3F6);
+}
+
 
 // Wait till drive is no longer busy
 static int ata_wait(void)
@@ -66,6 +78,15 @@ int ata_init(void)
 
 	//Select master drive
 	outb(ATA_DRIVE_SELECT, 0xA0);
+	ata_400ns_delay();
+
+	// Floating bus: an absent/unsettled drive commonly reads back as
+	// 0xFF on real hardware (not 0x00), due to pull ups on an unselected
+	// bus. QEMU dosen't reproduce this, which is why this silently
+	// regressed without failing there.
+	uint8_t select_status = inb(ATA_STATUS);
+	if (select_status == 0x00 || select_status == 0xFF)
+		return -1;
 
 
 	// Clear LBA and sector count registers
