@@ -298,3 +298,4 @@ user/tests/stringtest.elf: user/tests/stringtest.c user/string.c user/string.h u
 user/tests/stdiotest.elf: user/tests/stdiotest.c user/stdio.c user/stdio.h user/string.c user/crt0.o user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib -Iuser \
 	      -T user/linker.ld user/crt0.o user/tests/stdiotest.c user/stdio.c user/string.c -o user/tests/stdiotest.elf
+		  

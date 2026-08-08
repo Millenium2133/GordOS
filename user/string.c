@@ -117,3 +117,61 @@ void* memmove(void* dst, const void* src, size_t n)
     }
     return dst;
 }
+
+int memcmp(const void* a, const void* b, size_t n)
+{
+    const unsigned char* pa = a;
+    const unsigned char* pb = b;
+    for (size_t i = 0; i < n; i++)
+    {
+        if (pa[i] != pb[i])
+            return (int)pa[i] - (int)pb[i];
+    }
+    return 0;
+}
+
+void* memchr(const void* s, int c, size_t n)
+{
+    const unsigned char* p = s;
+    for (size_t i = 0; i < n; i++)
+    {
+        if (p[i] == (unsigned char)c)
+            return (void*)(p + i);
+    }
+    return 0;
+}
+
+char* strcat(char* dst, const char* src)
+{
+    char* ret = dst;
+    while (*dst) dst++;          // walk to the end of dst
+    while ((*dst++ = *src++)) {} // append src, including its NUL
+    return ret;
+}
+
+char* strncat(char* dst, const char* src, size_t n)
+{
+    char* ret = dst;
+    while (*dst) dst++;
+    size_t i;
+    for (i = 0; i < n && src[i]; i++)
+        dst[i] = src[i];
+    dst[i] = '\0'; // strncat always NUL-terminates, unlike strncpy
+    return ret;
+}
+
+char* strstr(const char* haystack, const char* needle)
+{
+    if (!*needle)
+        return (char*)haystack; // empty needle matches immediately, per spec
+
+    for (; *haystack; haystack++)
+    {
+        const char* h = haystack;
+        const char* n = needle;
+        while (*h && *n && *h == *n) { h++; n++; }
+        if (!*n)
+            return (char*)haystack;
+    }
+    return 0;
+}
