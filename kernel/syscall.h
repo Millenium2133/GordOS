@@ -40,6 +40,7 @@
 #define SYS_GETTIME         33
 #define SYS_CLEAR           34
 #define SYS_SBRK            35
+#define SYS_LSEEK           36
 
 void syscall_init(void);
 void syscall_handler(struct registers* regs);

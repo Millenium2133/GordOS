@@ -189,6 +189,57 @@ static int file_read(file_desc_t* f, char* buf, uint32_t len)
     return (int)got;
 }
 
+// sys_lseek: reposition a read fd. whence: 0=SEEK_SET, 1=SEEK_CUR
+// 2=SEEK_END (matches the standard POSIX values TCC's source uses
+// directly, so no translation needed at the call site). Returns the
+// new absolute position, or -1 on error.
+//
+// Read-only for now (mirrors what TCC acually needs, every lseek()
+// call in tccelf.c/libtcc.c is on a read fd, reading archive members
+// out of .a files or probing a source file's size). Walks the FAT
+// chain fresh from first_cluster every call rather than caching,
+// the files this seeks within (libc.a, libtcc1.a, source files) are
+// small, so theres no real cost to keeping this simple.
+static int sys_lseek(int fd, int offset, int whence)
+{
+    process_t* me = current_process;
+    if (!me || fd < 0 || fd >= MAX_FDS || me->fds[fd].kind == FD_NONE)
+        return -1;
+
+    file_desc_t* f = &me->fds[fd];
+    if (f->kind != FD_FILE || f->writable)
+        return -1;
+
+    int new_pos;
+    switch (whence)
+    {
+        case 0: new_pos = offset; break;                    // SEEK_SET
+        case 1: new_pos = (int)f->pos + offset; break;       // SEEK_CUR
+        case 2: new_pos = (int)f->size + offset; break;      // SEEK_END
+        default: return -1;
+    }
+    if (new_pos < 0)
+        return -1;
+
+    uint32_t cbytes = vfs_cluster_size();
+    uint32_t target_cluster_index  = (uint32_t)new_pos / cbytes;
+    uint32_t target_cluster_offset = (uint32_t)new_pos % cbytes;
+
+    uint32_t cluster = f->first_cluster;
+    for (uint32_t i = 0; i < target_cluster_index; i++)
+    {
+        cluster = vfs_next_cluster(cluster);
+        if (cluster >= VFS_CLUSTER_EOC)
+            break; // seeking past EOF, next file_read() call correctly yields 0 (EOF)
+    }
+
+    f->cur_cluster    = cluster;
+    f->cluster_offset = target_cluster_offset;
+    f->pos            = (uint32_t)new_pos;
+
+    return new_pos;
+}
+
 // Read bytes from a pipe, blocking while it's empty (but the write end
 // is still open). Returns 0 when empty and write end is fully closed
 // (EOF). Returns the number of bytes read otherwise.
@@ -1032,6 +1083,10 @@ void syscall_handler(struct registers* regs)
         case SYS_SBRK:
             // ebx = increment (signed), 0 to just query the current break.
             ret = sys_sbrk((int)regs->ebx);
+            break;
+        case SYS_LSEEK:
+            // ebx = fd, ecx = offset (signed), edx = whence
+            ret = sys_lseek((int)regs->ebx, (int)regs->ecx, (int)regs->edx);
             break;
         default:
             // Unknown syscall

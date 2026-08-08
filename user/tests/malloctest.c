@@ -6,7 +6,7 @@
 // Install:  make disk (copies as MALLOCTEST.ELF)
 // Run:      exec MALLOCTEST.ELF
 
-#include "malloc.h"
+#include "stdlib.h"
 
 #define SYS_WRITE 0
 #define SYS_EXIT  1

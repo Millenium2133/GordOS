@@ -1,13 +1,15 @@
-// Userland malloc/free, ported from memory/kmalloc.c but backed by sys_sbrk
-// instead of pmm_alloc_contiguous. Same coalescing free-list design:
-// A header sits in front of each allocation, malloc splits a free block is theres
-// enough room left over, free merges forward with adjacent free block.
+// Userland stdlib, malloc/free (Phase 1.2), ported from
+// memory/kmalloc.c but backed by sys_sbrk instead of
+// pmm_alloc_contiguous. Same coalescing free-list design: a header
+// sits in front of each allocation, malloc splits a free block if
+// there's enough room left over, free merges forward with an
+// adjacent free block.
 //
-// This file is self-contained (own syscall stub, like every other user program)
-// since there's no shared libc yet.
-// See the README's Phase 1 Groundwork notes.
+// This file is self-contained (own syscall stub, like every other
+// user program), it's compiled into libc.a alongside string.c,
+// stdio.c, ctype.c, and setjmp.s for the TCC port (Phase 2).
 
-#include "malloc.h"
+#include "stdlib.h"
 #include <stdint.h>
 
 #define SYS_SBRK 35

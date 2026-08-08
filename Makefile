@@ -280,9 +280,9 @@ user/cat2.elf: user/cat2.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
 	      -T user/linker.ld user/cat2.c -o user/cat2.elf
 
-user/tests/malloctest.elf: user/tests/malloctest.c user/malloc.c user/malloc.h user/linker.ld
+user/tests/malloctest.elf: user/tests/malloctest.c user/stdlib.c user/stdlib.h user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib -Iuser \
-	      -T user/linker.ld user/tests/malloctest.c user/malloc.c -o user/tests/malloctest.elf
+	      -T user/linker.ld user/tests/malloctest.c user/stdlib.c -o user/tests/malloctest.elf
 
 user/crt0.o: user/crt0.s
 	$(AS) user/crt0.s -o user/crt0.o
