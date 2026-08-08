@@ -139,7 +139,7 @@ The goal for GordOS is to become a self-hosting system - one where programs can 
 
 ---
 
-### Phase 1: Groundwork
+### Phase 1: Groundwork (Done)
 
 Everything in Phase 2 (TCC) depends on this. None of it is glamorous but all of it is necessary.
 
@@ -155,7 +155,7 @@ A small `crt0.s` assembly stub that the linker places before `main()`. It receiv
 **1.4 String functions (Done)**
 `memcpy`, `memset`, `memmove`, `strcmp`, `strcpy`, `strncpy`, `strchr`, `strrchr`. The kernel already has some of these in `lib/string.c` - the userland versions just need to not assume kernel privilege. TCC uses these internally.
 
-**1.5 Minimal stdio**
+**1.5 Minimal stdio (Done)**
 `printf` backed by `sys_write`. `fopen`/`fclose`/`fread`/`fwrite` backed by the existing fd syscalls (`sys_open`, `sys_read_fd`, `sys_write_fd`, `sys_close`). TCC uses stdio to read source files and write output - without this it cannot compile anything.
 
 ---
