@@ -531,12 +531,16 @@ static int sys_exec(const char* upath, const char** uargv)
     }
     cmdline[clen] = '\0';
 
-    void* buf = kmalloc(65536);
+    uint32_t first_cluster = 0, file_size = 0;
+    if (vfs_lookup(path, &first_cluster, &file_size) != 0)
+        return -1;
+
+    void* buf = kmalloc(file_size > 0 ? file_size : 1);
     if (!buf)
         return -1;
 
     uint32_t size = 0;
-    if (vfs_read_file(path, buf, 65536, &size) != 0)
+    if (vfs_read_file(path, buf, file_size, &size) != 0)
     {
         kfree(buf);
         return -1;

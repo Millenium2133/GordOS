@@ -139,16 +139,24 @@ static void cmd_cat(const char* args)
 		return;
 	}
 
-	// Allocate a buffer for the file (max 64KB for now)
+	// Look up the real file size first, so the buffer is exactly
+	// big enough - no more silent truncation past a fixed cap.
+	uint32_t first_cluster = 0, file_size = 0;
+	if (vfs_lookup(args, &first_cluster, &file_size) != 0)
+	{
+		terminal_writestring("cat: file not found\n");
+		return;
+	}
+
 	uint32_t size = 0;
-	void* buf = kmalloc(65536);
+	void* buf = kmalloc(file_size > 0 ? file_size : 1); // kmalloc(0) returns NULL
 	if (!buf)
 	{
 		terminal_writestring("cat: out of memory\n");
 		return;
 	}
 
-	if (vfs_read_file(args, buf, 65536, &size) != 0)
+	if (vfs_read_file(args, buf, file_size, &size) != 0)
 	{
 		terminal_writestring("cat: file not found\n");
 		kfree(buf);
@@ -383,8 +391,17 @@ static process_t* start_program(const char* args, int foreground, const char* wh
 	}
 	filename[fi] = '\0';
 
-	// Read the ELF image into memory (max 64KB for now)
-	void* buf = kmalloc(65536);
+	// Look up the real file size first, so the buffer is exactly
+	// big enough - no more silent truncation past a fixed cap.
+	uint32_t first_cluster = 0, file_size = 0;
+	if (vfs_lookup(filename, &first_cluster, &file_size) != 0)
+	{
+		terminal_writestring(who);
+		terminal_writestring(": file not found\n");
+		return 0;
+	}
+
+	void* buf = kmalloc(file_size > 0 ? file_size : 1);
 	if (!buf)
 	{
 		terminal_writestring(who);
@@ -393,7 +410,7 @@ static process_t* start_program(const char* args, int foreground, const char* wh
 	}
 
 	uint32_t size = 0;
-	if (vfs_read_file(filename, buf, 65536, &size) != 0)
+	if (vfs_read_file(filename, buf, file_size, &size) != 0)
 	{
 		terminal_writestring(who);
 		terminal_writestring(": file not found\n");
@@ -1148,11 +1165,15 @@ void shell_init(void)
 // On success the kernel shell stays silent until ush exits.
 int shell_launch_ush(void)
 {
-	void* buf = kmalloc(65536);
+	uint32_t first_cluster = 0, file_size = 0;
+	if (vfs_lookup("USH.ELF", &first_cluster, &file_size) != 0)
+		return -1;
+
+	void* buf = kmalloc(file_size > 0 ? file_size : 1);
 	if (!buf) return -1;
 
 	uint32_t size = 0;
-	if (vfs_read_file("USH.ELF", buf, 65536, &size) != 0)
+	if (vfs_read_file("USH.ELF", buf, file_size, &size) != 0)
 	{
 		kfree(buf);
 		return -1;
