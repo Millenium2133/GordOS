@@ -11,10 +11,19 @@
 
 #include "stdlib.h"
 #include "string.h"
+#include "ctype.h"
 #include <stdint.h>
 
 #define SYS_SBRK 35
+#define SYS_EXIT 1
 #define PAGE_SIZE 4096
+
+static inline int syscall1_exit(int code)
+{
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_EXIT), "b"(code) : "memory");
+    return ret;
+}
 
 typedef struct block_header
 {
@@ -195,4 +204,161 @@ void* calloc(size_t nmemb, size_t size)
 
     memset(ptr, 0, total);
     return ptr;
+}
+
+void exit(int status)
+{
+    syscall1_exit(status);
+    for (;;) {} // sys_exit doesn't return, but just in case
+}
+
+void abort(void)
+{
+    // GordOS has no real signal delivery, so there's no true SIGABRT
+    // to raise - this just exits with the conventional Unix
+    // 128+SIGABRT(6) status a caller might check for.
+    exit(134);
+}
+
+int atoi(const char* s)
+{
+    int sign = 1;
+    long result = 0;
+    while (isspace((unsigned char)*s)) s++;
+    if (*s == '+') s++;
+    else if (*s == '-') { sign = -1; s++; }
+    while (*s >= '0' && *s <= '9')
+    {
+        result = result * 10 + (*s - '0');
+        s++;
+    }
+    return (int)(sign * result);
+}
+
+long strtol(const char* nptr, char** endptr, int base)
+{
+    const char* s = nptr;
+    while (isspace((unsigned char)*s)) s++;
+
+    int sign = 1;
+    if (*s == '+') s++;
+    else if (*s == '-') { sign = -1; s++; }
+
+    if ((base == 0 || base == 16) && s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
+    { s += 2; base = 16; }
+    else if (base == 0 && s[0] == '0') base = 8;
+    else if (base == 0) base = 10;
+
+    unsigned long result = 0;
+    const char* start = s;
+    while (*s)
+    {
+        int digit;
+        char c = *s;
+        if (c >= '0' && c <= '9') digit = c - '0';
+        else if (c >= 'a' && c <= 'z') digit = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'Z') digit = c - 'A' + 10;
+        else break;
+        if (digit >= base) break;
+        result = result * (unsigned long)base + (unsigned long)digit;
+        s++;
+    }
+    // Note: doesn't clamp to LONG_MAX/LONG_MIN on overflow or set
+    // errno - acceptable simplification for what TCC actually needs
+    // this for (parsing numeric literals and config values, not
+    // adversarial input).
+    if (endptr) *endptr = (char*)(s == start ? nptr : s);
+    return sign * (long)result;
+}
+
+unsigned long strtoul(const char* nptr, char** endptr, int base)
+{
+    const char* s = nptr;
+    while (isspace((unsigned char)*s)) s++;
+
+    int negative = 0;
+    if (*s == '+') s++;
+    else if (*s == '-') { negative = 1; s++; }
+
+    if ((base == 0 || base == 16) && s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
+    { s += 2; base = 16; }
+    else if (base == 0 && s[0] == '0') base = 8;
+    else if (base == 0) base = 10;
+
+    unsigned long result = 0;
+    const char* start = s;
+    while (*s)
+    {
+        int digit;
+        char c = *s;
+        if (c >= '0' && c <= '9') digit = c - '0';
+        else if (c >= 'a' && c <= 'z') digit = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'Z') digit = c - 'A' + 10;
+        else break;
+        if (digit >= base) break;
+        result = result * (unsigned long)base + (unsigned long)digit;
+        s++;
+    }
+    if (endptr) *endptr = (char*)(s == start ? nptr : s);
+    return negative ? (unsigned long)(-(long)result) : result;
+}
+
+// GordOS has no environment variable storage at all - this is a
+// legitimately correct implementation, not a stub: TCC's own calls
+// to getenv() (for things like $CPATH, $TMPDIR) are all designed to
+// fall back to sane defaults when it returns NULL.
+char* getenv(const char* name)
+{
+    (void)name;
+    return 0;
+}
+
+static void qsort_swap(unsigned char* a, unsigned char* b, size_t size)
+{
+    for (size_t i = 0; i < size; i++)
+    {
+        unsigned char tmp = a[i];
+        a[i] = b[i];
+        b[i] = tmp;
+    }
+}
+
+static void qsort_recurse(unsigned char* base, long lo, long hi, size_t size,
+                           int (*compar)(const void*, const void*))
+{
+    while (lo < hi)
+    {
+        unsigned char* pivot = base + hi * (long)size;
+        long store = lo;
+        for (long i = lo; i < hi; i++)
+        {
+            if (compar(base + i * (long)size, pivot) < 0)
+            {
+                qsort_swap(base + i * (long)size, base + store * (long)size, size);
+                store++;
+            }
+        }
+        qsort_swap(base + store * (long)size, pivot, size);
+
+        // Recurse into the smaller partition, loop on the larger one -
+        // keeps stack depth to O(log n) even on already-sorted input,
+        // the classic quicksort worst case for naive recursion.
+        if (store - lo < hi - store)
+        {
+            qsort_recurse(base, lo, store - 1, size, compar);
+            lo = store + 1;
+        }
+        else
+        {
+            qsort_recurse(base, store + 1, hi, size, compar);
+            hi = store - 1;
+        }
+    }
+}
+
+void qsort(void* base, size_t nmemb, size_t size,
+           int (*compar)(const void*, const void*))
+{
+    if (nmemb < 2 || size == 0) return;
+    qsort_recurse((unsigned char*)base, 0, (long)(nmemb - 1), size, compar);
 }
