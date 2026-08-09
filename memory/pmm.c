@@ -135,6 +135,8 @@ void* pmm_alloc_page(void)
 void pmm_free_page(void* addr)
 {
 	uint32_t page = (uint32_t)addr / PAGE_SIZE;
+	if (page >= MAX_PAGES)
+		return; // invalid/out-of-range address - refuse rather than corrupt the bitmap
 	if (!bitmap_test(page))
 		return; // already free, don't double-count
 	bitmap_clear(page);

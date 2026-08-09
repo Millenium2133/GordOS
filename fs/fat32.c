@@ -24,6 +24,17 @@ static uint32_t data_start;
 static uint32_t cwd_cluster;
 static char cwd_path[256];
 
+// Any valid, non-corrupted cluster chain can have at most this many
+// links, a chain that walks further than the filesystem's total
+// cluster count can only mean a corrupted/cyclic FAT (e.g. from a
+// crash or power loss mid-write on real hardware). Used to bound
+// every cluster-chain walk in this file so that hits a clean bailout
+// instead of spinning forever.
+static uint32_t max_chain_length(void)
+{
+    return (total_sectors - data_start) / sectors_per_cluster;
+}
+
 // Helper to read a uint16 from a byte array at offset
 static uint16_t read16(uint8_t* buf, int offset)
 {
@@ -102,14 +113,16 @@ static int fat_set_cluster(uint32_t cluster, uint32_t value)
 // Free an entire cluster chain in the FAT
 static void fat_free_chain(uint32_t cluster)
 {
+    uint32_t chain_steps = 0;
+    uint32_t chain_limit = max_chain_length();
     while (cluster >= 2 && cluster < FAT32_EOC)
     {
+        if (++chain_steps > chain_limit) break; // corrupted/cyclic FAT - stop, don't hang
         uint32_t next = fat_next_cluster(cluster);
         fat_set_cluster(cluster, FAT32_FREE);
         cluster = next;
     }
 }
-
 // Find a free cluster and allocate it
 static uint32_t fat_alloc_cluster(void)
 {
@@ -343,8 +356,11 @@ static int dir_write_entries(uint32_t dir_cluster, const uint8_t* entries_buf, i
     uint32_t prev_cluster = 0;
     int start_idx = -1;
 
+    uint32_t chain_steps = 0;
+    uint32_t chain_limit = max_chain_length();
     while (cluster >= 2 && cluster < FAT32_EOC)
     {
+        if (++chain_steps > chain_limit) break; // corrupted/cyclic FAT - bail, don't hang
         if (read_cluster(cluster, buf) != 0) break;
         for (int i = 0; i < entries_per_cluster; i++)
         {
@@ -460,8 +476,11 @@ static int fat32_resolve_path(const char* path, uint32_t* dir_cluster, const cha
         int lfn_remain  = 0;
         for (int b = 0; b < 256; b++) lfn_buf[b] = '\0';
 
+        uint32_t chain_steps = 0;
+        uint32_t chain_limit = max_chain_length();
         while (scan >= 2 && scan < FAT32_EOC)
         {
+            if (++chain_steps > chain_limit) goto not_found; // corrupted/cyclic FAT
             if (read_cluster(scan, buf) != 0) break;
 
             uint32_t entries = (sectors_per_cluster * 512) / 32;
@@ -554,9 +573,13 @@ int fat32_list_dir(const char* path)
 {
     uint32_t cluster;
 
-    if (!path || path[0] == '\0' || (path[0] == '/' && path[1] == '\0'))
+    if (!path || path[0] == '\0')
     {
         cluster = cwd_cluster;
+    }
+    else if (path[0] == '/' && path[1] == '\0')
+    {
+        cluster = root_cluster;
     }
     else
     {
@@ -576,8 +599,11 @@ int fat32_list_dir(const char* path)
         int lfn_remain  = 0;
         for (int b = 0; b < 256; b++) lfn_buf[b] = '\0';
 
+        uint32_t chain_steps = 0;
+        uint32_t chain_limit = max_chain_length();
         while (scan >= 2 && scan < FAT32_EOC)
         {
+            if (++chain_steps > chain_limit) break; // corrupted/cyclic FAT
             if (read_cluster(scan, buf) != 0) break;
 
             uint32_t entries = (sectors_per_cluster * 512) / 32;
@@ -625,8 +651,11 @@ ls_found:
     int lfn_remain  = 0;
     for (int b = 0; b < 256; b++) lfn_buf[b] = '\0';
 
+    uint32_t chain_steps = 0;
+    uint32_t chain_limit = max_chain_length();
     while (cluster >= 2 && cluster < FAT32_EOC)
     {
+        if (++chain_steps > chain_limit) goto ls_done; // corrupted/cyclic FAT
         if (read_cluster(cluster, buf) != 0) break;
 
         uint32_t entries = (sectors_per_cluster * 512) / 32;
@@ -717,14 +746,18 @@ int fat32_find_prefix(const char* prefix, char matches[][256], int max_matches)
         char lfn_buf[256]; uint8_t lfn_chk = 0; int lfn_remain = 0;
         for (int b = 0; b < 256; b++) lfn_buf[b] = '\0';
 
+        uint32_t chain_steps = 0;
+        uint32_t chain_limit = max_chain_length();
         while (scan >= 2 && scan < FAT32_EOC)
         {
+            if (++chain_steps > chain_limit) goto prefix_dir_done; // corrupted/cyclic FAT
             if (read_cluster(scan, buf) != 0) break;
             uint32_t entries = (sectors_per_cluster * 512) / 32;
             for (uint32_t i = 0; i < entries; i++)
             {
                 uint8_t* e = buf + (i * 32);
                 if (e[0] == 0x00) goto prefix_dir_done;
+
                 if ((uint8_t)e[0] == 0xE5) { lfn_remain=0; lfn_buf[0]='\0'; continue; }
                 uint8_t attr = e[11];
                 if (attr == 0x0F) { lfn_accumulate(e,lfn_buf,&lfn_chk,&lfn_remain); continue; }
@@ -773,8 +806,11 @@ prefix_dir_found:;
     char lfn_buf[256]; uint8_t lfn_chk = 0; int lfn_remain = 0;
     for (int b = 0; b < 256; b++) lfn_buf[b] = '\0';
 
+    uint32_t chain_steps = 0;
+    uint32_t chain_limit = max_chain_length();
     while (cluster >= 2 && cluster < FAT32_EOC)
     {
+        if (++chain_steps > chain_limit) goto done; // corrupted/cyclic FAT
         if (read_cluster(cluster, buf) != 0) break;
 
         uint32_t entries = (sectors_per_cluster * 512) / 32;
@@ -855,8 +891,11 @@ int fat32_lookup_file(const char* path, uint32_t* first_cluster, uint32_t* size)
     char lfn_buf[256]; uint8_t lfn_chk = 0; int lfn_remain = 0;
     for (int b = 0; b < 256; b++) lfn_buf[b] = '\0';
 
+    uint32_t chain_steps = 0;
+    uint32_t chain_limit = max_chain_length();
     while (cluster >= 2 && cluster < FAT32_EOC && !found)
     {
+        if (++chain_steps > chain_limit) goto done; // corrupted/cyclic FAT
         if (read_cluster(cluster, buf) != 0) break;
 
         uint32_t entries = (sectors_per_cluster * 512) / 32;
@@ -912,8 +951,11 @@ int fat32_read_file(const char* path, void* buffer, uint32_t bufsize, uint32_t* 
     uint8_t* out = (uint8_t*)buffer;
     uint32_t cluster = file_cluster;
 
+    uint32_t chain_steps = 0;
+    uint32_t chain_limit = max_chain_length();
     while (cluster >= 2 && cluster < FAT32_EOC && bytes_read < file_size)
     {
+        if (++chain_steps > chain_limit) break; // corrupted/cyclic FAT
         if (read_cluster(cluster, buf) != 0) break;
 
         uint32_t cluster_bytes = sectors_per_cluster * 512;
@@ -959,8 +1001,11 @@ int fat32_write_file(const char* path, const void* buffer, uint32_t size)
     struct { uint32_t cluster; int idx; } lfn_track[MAX_LFN_TRACK];
     int lfn_track_count = 0;
 
+    uint32_t chain_steps = 0;
+    uint32_t chain_limit = max_chain_length();
     while (scan_cluster >= 2 && scan_cluster < FAT32_EOC)
     {
+        if (++chain_steps > chain_limit) goto scan_done; // corrupted/cyclic FAT
         if (read_cluster(scan_cluster, scan_buf) != 0) break;
 
         uint32_t entries = (sectors_per_cluster * 512) / 32;
@@ -1097,8 +1142,11 @@ int fat32_delete_file(const char* path)
 
     uint32_t cur_cluster = dir_cluster;
 
+    uint32_t chain_steps = 0;
+    uint32_t chain_limit = max_chain_length();
     while (cur_cluster >= 2 && cur_cluster < FAT32_EOC)
     {
+        if (++chain_steps > chain_limit) goto not_found; // corrupted/cyclic FAT
         if (read_cluster(cur_cluster, buf) != 0) break;
 
         uint32_t entries = (sectors_per_cluster * 512) / 32;
@@ -1197,8 +1245,11 @@ int fat32_rename_file(const char* oldpath, const char* newname)
 
     uint32_t cur_cluster = dir_cluster;
 
+    uint32_t chain_steps = 0;
+    uint32_t chain_limit = max_chain_length();
     while (cur_cluster >= 2 && cur_cluster < FAT32_EOC)
     {
+        if (++chain_steps > chain_limit) goto not_found; // corrupted/cyclic FAT
         if (read_cluster(cur_cluster, buf) != 0) break;
 
         uint32_t entries = (sectors_per_cluster * 512) / 32;
@@ -1381,8 +1432,11 @@ int fat32_cd(const char* name)
     char lfn_buf[256]; uint8_t lfn_chk = 0; int lfn_remain = 0;
     for (int b = 0; b < 256; b++) lfn_buf[b] = '\0';
 
+    uint32_t chain_steps = 0;
+    uint32_t chain_limit = max_chain_length();
     while (scan >= 2 && scan < FAT32_EOC)
     {
+        if (++chain_steps > chain_limit) goto not_found; // corrupted/cyclic FAT
         if (read_cluster(scan, buf) != 0) break;
 
         uint32_t entries = (sectors_per_cluster * 512) / 32;

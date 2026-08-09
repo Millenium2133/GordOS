@@ -1030,6 +1030,14 @@ void shell_handle_char(char c)
 			while (matches[0][new_len]) new_len++;
 			int diff = new_len - old_len;
 
+			// Bail out if applying this completion would overflow
+			// input_buffer (e.g. completing a short prefix into a
+			// long LFN filename near the end of an already-full
+			// line), do nothing rather than corrupt the static
+			// history[] array that follows input_buffer in memory.
+			if (input_index + diff < INPUT_BUFFER_SIZE)
+			{
+
 			// Shift buffer contents to accommodate new length
 			if (diff > 0)
 			{
@@ -1063,6 +1071,8 @@ void shell_handle_char(char c)
 			// Move hardware cursor back to correct position
 			for (int i = cursor_pos; i < input_index + 1; i++)
 				terminal_cursor_left();
+
+			} // input_index + diff < INPUT_BUFFER_SIZE
 		}
 		else if (count > 1)
 		{
