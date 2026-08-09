@@ -17,6 +17,7 @@ OBJS = \
 	cpu/idt.o \
 	cpu/idt_flush.o \
 	cpu/isr.o \
+	cpu/fpu.o \
 	\
 	drivers/pic.o \
 	drivers/keyboard.o \
@@ -81,6 +82,7 @@ disk: user
 	mcopy -i disk.img user/tests/stringtest.elf ::STRINGTEST.ELF
 	mcopy -i disk.img user/tests/stdiotest.elf ::STDIOTEST.ELF
 	mcopy -i disk.img user/tests/libctest.elf ::LIBCTEST.ELF
+	mcopy -i disk.img user/tests/fputest.elf ::FPUTEST.ELF
 
 run: GordOS.iso
 	@test -f disk.img || (echo "ERROR: disk.img not found, run 'make disk' first" && exit 1)
@@ -121,6 +123,9 @@ cpu/idt_flush.o: cpu/idt_flush.s
 
 cpu/isr.o: cpu/isr.s
 	$(AS) cpu/isr.s -o cpu/isr.o
+
+cpu/fpu.o: cpu/fpu.c cpu/fpu.h
+	$(CC) $(CFLAGS) -c cpu/fpu.c -o cpu/fpu.o
 
 # +------------------+
 # + Drivers          +
@@ -196,7 +201,7 @@ fs/fat32.o: fs/fat32.c fs/fat32.h fs/vfs.h drivers/ata.h memory/kmalloc.h
 kernel/kernel.o: kernel/kernel.c cpu/gdt.h cpu/idt.h drivers/pic.h \
                  drivers/keyboard.h display/vga.h display/splash.h \
                  lib/string.h kernel/shell.h kernel/process.h \
-                 kernel/scheduler.h kernel/elf.h
+                 kernel/scheduler.h kernel/elf.h cpu/fpu.h
 	$(CC) $(CFLAGS) -c kernel/kernel.c -o kernel/kernel.o
 
 kernel/shell.o: kernel/shell.c kernel/shell.h display/vga.h lib/string.h \
@@ -215,10 +220,10 @@ kernel/usermode.o: kernel/usermode.c kernel/usermode.h cpu/gdt.h
 kernel/usermode_asm.o: kernel/usermode.s
 	$(AS) kernel/usermode.s -o kernel/usermode_asm.o
 
-kernel/process.o: kernel/process.c kernel/process.h kernel/pipe.h memory/paging.h memory/kmalloc.h cpu/gdt.h
+kernel/process.o: kernel/process.c kernel/process.h kernel/pipe.h memory/paging.h memory/kmalloc.h cpu/gdt.h cpu/fpu.h
 	$(CC) $(CFLAGS) -c kernel/process.c -o kernel/process.o
 
-kernel/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/process.h memory/paging.h cpu/gdt.h
+kernel/scheduler.o: kernel/scheduler.c kernel/scheduler.h kernel/process.h memory/paging.h cpu/gdt.h cpu/fpu.h
 	$(CC) $(CFLAGS) -c kernel/scheduler.c -o kernel/scheduler.o
 
 kernel/scheduler_asm.o: kernel/scheduler.s
@@ -240,7 +245,7 @@ kernel/pipe.o: kernel/pipe.c kernel/pipe.h memory/kmalloc.h
 user: user/hello.elf user/echo.elf user/files.elf user/crash.elf user/counter.elf \
       user/forktest.elf user/fdcat.elf user/redir.elf user/ush.elf user/cat2.elf \
       user/tests/malloctest.elf user/tests/crt0test.elf user/tests/stringtest.elf user/tests/stdiotest.elf \
-	  user/tests/libctest.elf
+	  user/tests/libctest.elf user/tests/fputest.elf
 
 user/hello.elf: user/hello.c user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
@@ -304,4 +309,8 @@ user/tests/stdiotest.elf: user/tests/stdiotest.c user/stdio.c user/stdio.h user/
 user/tests/libctest.elf: user/tests/libctest.c user/stdlib.c user/ctype.c user/string.c user/stdio.c user/crt0.o user/linker.ld
 	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib -Iuser \
 	      -T user/linker.ld user/crt0.o user/tests/libctest.c user/stdlib.c user/ctype.c user/string.c user/stdio.c -o user/tests/libctest.elf
+
+user/tests/fputest.elf: user/tests/fputest.c user/linker.ld
+	$(CC) -std=gnu99 -ffreestanding -O2 -Wall -Wextra -nostdlib \
+	      -T user/linker.ld user/tests/fputest.c -o user/tests/fputest.elf
 		  

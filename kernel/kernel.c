@@ -25,6 +25,7 @@
 #include "scheduler.h"
 #include "elf.h"
 #include "serial.h"
+#include "fpu.h"
 
 
 #define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
@@ -38,6 +39,7 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi)
 	gdt_init();
 	pic_remap();
 	idt_init();
+	fpu_init();
 	syscall_init();
 	pmm_init(mbi);
 	paging_init();

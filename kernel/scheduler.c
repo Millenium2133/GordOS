@@ -2,6 +2,7 @@
 #include "process.h"
 #include "paging.h"
 #include "gdt.h"
+#include "fpu.h"
 
 // Circular linked list of ready processes (always contains at least
 // the kernel task once process_init has run)
@@ -251,6 +252,12 @@ void scheduler_switch(void)
 
     // Switch address space
     paging_switch_address_space(next->page_directory);
+
+    // Save the outgoing process's FPU state and load the incoming
+    // one's - each process's floating point registers are otherwise
+    // shared hardware state, silently corrupted by every switch.
+    fpu_save(prev->fpu_state);
+    fpu_restore(next->fpu_state);
 
     // The actual register save/restore is done in assembly.
     extern void scheduler_asm_switch(uint32_t* old_esp, uint32_t new_esp);

@@ -10,6 +10,7 @@
 #include "usermode.h"
 #include "wbuf.h"
 #include "pipe.h"
+#include "fpu.h"
 
 // Set up a fresh fd table: standard streams open, everything else free.
 static void fd_init_std(file_desc_t* fds)
@@ -192,6 +193,8 @@ process_t* process_create(void)
     process_t* proc = kmalloc(sizeof(process_t));
     if (!proc)
         return 0;
+
+    fpu_seed_default(proc->fpu_state);
 
     // Allocate kernel stack
     proc->kernel_stack = kmalloc(KERNEL_STACK_SIZE);

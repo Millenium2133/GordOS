@@ -90,6 +90,10 @@ typedef struct process
     uint32_t heap_start;
     uint32_t heap_end;
 
+    // Saved FPU register state, swapped in/out on every context
+    // switch so each process's floating point state is independent.
+    uint8_t fpu_state[108]; // FPU_STATE_SIZE from cpu/fpu.h
+
     // Open files (fd index = slot index)
     file_desc_t fds[MAX_FDS];
 
