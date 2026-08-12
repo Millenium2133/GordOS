@@ -18,6 +18,7 @@ void terminal_putchar(char c);
 void terminal_backspace(void);
 
 // Check that [buf, buf+len) lies entirely in user space
+// There is a critical bug here that can cause Ring 3 to hang the entire kernel.
 static int user_range_ok(const void* buf, uint32_t len)
 {
     uint32_t start = (uint32_t)buf;
