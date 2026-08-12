@@ -28,7 +28,7 @@ uint32_t elf_load(process_t* proc, void* elf_data, uint32_t elf_size)
     // Walk program headers and load PT_LOAD segments
     uint32_t i;
     uint32_t highest_end = 0; // Highest vaddr + memsz seen, for the heap start
-    for (i = 0; i < header->phnum; i++)
+    for (i = 0; i < header->phnum; i++) // elf_load does no bounds validation whatsoever. This is not good, needs to be fixed.
     {
         elf_phdr_t* phdr = (elf_phdr_t*)((uint8_t*)elf_data + header->phoff + i * header->phentsize);
 
