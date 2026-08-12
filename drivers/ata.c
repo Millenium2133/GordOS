@@ -34,6 +34,7 @@ static int ata_wait(void)
 	uint8_t status;
 
 	// Wait for BSY to clear
+	// ata_wait() and ata_wait_drq() spin forever. this is a bug that needs to be fixed, not now though, im too tired.
 	while ((status = inb(ATA_STATUS)) & ATA_STATUS_BSY);
 
 	// error checking
