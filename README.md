@@ -381,7 +381,7 @@ Make sure you can still see all the correct files and nothing is corrupt.
 
 Once you have confirmed everything is good, it's time to move on to setting up the cross compiler.
 
-Follow the [OSDev cross-compiler guide](https://wiki.osdev.org/GCC_Cross-Compiler), then add to your `~/.bashrc`:
+Follow the [OSDev cross-compiler guide](https://wiki.osdev.org/GCC_Cross-Compiler), then add to your `~/.bashrc` or run it in your terminal, although, if you do this, you will need to run it every time you open a new terminal:
 
 ```bash
 export PREFIX="$HOME/opt/cross"
